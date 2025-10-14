@@ -28,6 +28,59 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
 }
 
 
+def approximate_loop_arc_length(length: int, amplitude: float, width: float) -> float:
+    if length <= 0:
+        return 0.0
+
+    denom = max(length - 1, 1)
+    prev_x = 0.0
+    prev_y = 0.0
+    total = 0.0
+
+    for idx in range(length):
+        phase = idx / denom if denom > 0 else 0.0
+        vertical_shape = math.sin(math.pi * phase)
+        horizontal_shape = math.sin(2.0 * math.pi * phase)
+        x = width * horizontal_shape
+        y = amplitude * vertical_shape
+        if idx == 0:
+            prev_x, prev_y = x, y
+            continue
+        total += math.hypot(x - prev_x, y - prev_y)
+        prev_x, prev_y = x, y
+
+    return total
+
+
+def compute_gap_loop_width(length: int, amplitude: float) -> float:
+    if length <= 1:
+        return 0.0
+
+    target_arc = float(length)
+    min_arc = approximate_loop_arc_length(length, amplitude, 0.0)
+    if target_arc <= min_arc:
+        return 0.0
+
+    width_upper = max(1.0, 0.3 * length)
+    max_upper = 0.8 * length + 2.0
+    current_arc = approximate_loop_arc_length(length, amplitude, width_upper)
+    while current_arc < target_arc and width_upper < max_upper:
+        width_upper = min(max_upper, width_upper * 1.5)
+        current_arc = approximate_loop_arc_length(length, amplitude, width_upper)
+
+    lo = 0.0
+    hi = width_upper
+    for _ in range(40):
+        mid = (lo + hi) / 2.0
+        arc = approximate_loop_arc_length(length, amplitude, mid)
+        if arc < target_arc:
+            lo = mid
+        else:
+            hi = mid
+
+    return hi
+
+
 @dataclass
 class GapRun:
     start: int
@@ -93,6 +146,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=20,
         help="Window size for scanning long regions for weak alignment",
+    )
+    parser.add_argument(
+        "--tick-interval",
+        type=int,
+        default=10_000,
+        help="Spacing for local coordinate tick marks (set to 0 to disable)",
     )
     return parser.parse_args(argv)
 
@@ -365,7 +424,7 @@ def construct_stream_paths(
     gap_height_scale = 0.04
     loop_height_scale = 0.07
     max_loop_height = 0.8
-    max_loop_width = 1.2
+    max_beak_width = 1.2
 
     for run in data.gap_runs:
         indices = range(run.start, run.end + 1)
@@ -376,7 +435,7 @@ def construct_stream_paths(
         base_x = global_x[run.start]
         if length < min_gap_size:
             amplitude = min(max_loop_height, gap_height_scale * length)
-            width = min(max_loop_width, 0.4 + 0.1 * length)
+            width = min(max_beak_width, 0.4 + 0.1 * length)
             denom = max(length - 1, 1)
             for idx, pos in enumerate(indices):
                 t = idx / denom if denom > 0 else 0.5
@@ -394,7 +453,7 @@ def construct_stream_paths(
                     reference_x[pos] = base_x + width * horizontal_shape
         else:
             amplitude = min(max_loop_height, loop_height_scale * math.log1p(length))
-            width = min(max_loop_width, 0.6 + 0.15 * length)
+            width = compute_gap_loop_width(length, amplitude)
             denom = max(length - 1, 1)
             for idx, pos in enumerate(indices):
                 phase = idx / denom if denom > 0 else 0.5
@@ -435,6 +494,32 @@ def construct_stream_paths(
         reference_positions,
         current_global,
     )
+
+
+def compute_tick_marks(
+    local_positions: Sequence[int],
+    stream_x: np.ndarray,
+    stream_y: np.ndarray,
+    is_gap: Sequence[bool],
+    interval: int,
+) -> List[Tuple[float, float, int]]:
+    ticks: List[Tuple[float, float, int]] = []
+    if interval <= 0:
+        return ticks
+
+    next_tick = interval
+    max_local = local_positions[-1] if local_positions else 0
+
+    for idx, local in enumerate(local_positions):
+        if is_gap[idx]:
+            continue
+        while local >= next_tick:
+            ticks.append((float(stream_x[idx]), float(stream_y[idx]), next_tick))
+            next_tick += interval
+        if next_tick > max_local:
+            break
+
+    return ticks
 
 
 def write_stream_debug_tables(
@@ -540,6 +625,7 @@ def plot_alignment(
     height: float,
     dpi: int,
     output: Path,
+    tick_interval: int,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -551,6 +637,47 @@ def plot_alignment(
         linewidth=2.0,
         label="Reference",
     )
+
+    tick_length = 0.06
+    if tick_interval > 0:
+        query_ticks = compute_tick_marks(
+            data.query_local_positions,
+            query_x,
+            query_positions,
+            data.is_query_gap,
+            tick_interval,
+        )
+        reference_ticks = compute_tick_marks(
+            data.reference_local_positions,
+            reference_x,
+            reference_positions,
+            data.is_reference_gap,
+            tick_interval,
+        )
+
+        for x_pos, y_pos, value in query_ticks:
+            ax.plot([x_pos, x_pos], [y_pos, y_pos + tick_length], color="#555555", linewidth=1.0)
+            ax.text(
+                x_pos,
+                y_pos + tick_length * 1.4,
+                f"{value:,}",
+                fontsize=6,
+                ha="center",
+                va="bottom",
+                color="#333333",
+            )
+
+        for x_pos, y_pos, value in reference_ticks:
+            ax.plot([x_pos, x_pos], [y_pos, y_pos - tick_length], color="#555555", linewidth=1.0)
+            ax.text(
+                x_pos,
+                y_pos - tick_length * 1.4,
+                f"{value:,}",
+                fontsize=6,
+                ha="center",
+                va="top",
+                color="#333333",
+            )
 
     weak_spans = [(region.start, region.end) for region in data.weak_regions]
     for start, end in weak_spans:
@@ -638,6 +765,7 @@ def main(argv: Sequence[str]) -> int:
             args.height,
             args.dpi,
             args.output,
+            args.tick_interval,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)

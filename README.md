@@ -16,6 +16,11 @@ Additional tuning parameters can be supplied through optional flags:
 - `--block-size`: maximum block length evaluated as a whole before switching to the sliding window heuristic (default: 100).
 - `--min-sequence-identity`: minimum identity required to avoid flagging a segment as weakly aligned (default: 0.7).
 - `--window-size`: window length for scanning long regions for weak alignment (default: 20).
+- `--tick-interval`: spacing (in bp) for annotating local coordinate tick marks along each stream (default: 10,000; set to 0 to disable).
+
+Gap loops now expand sideways so their arc length reflects the amount of additional
+sequence introduced by the indel, while the rendered tick marks help relate those
+loops back to local nucleotide coordinates when large insertions accumulate.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and
