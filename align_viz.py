@@ -18,7 +18,6 @@ from typing import Dict, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 NUCLEOTIDE_COLORS: Dict[str, str] = {
     "A": "#4daf4a",  # green
     "C": "#377eb8",  # blue
