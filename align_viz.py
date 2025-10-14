@@ -18,7 +18,7 @@ from typing import Dict, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patches
-from matplotlib.path import Path
+from matplotlib.path import Path as MplPath
 
 
 NUCLEOTIDE_COLORS: Dict[str, str] = {
@@ -835,13 +835,13 @@ def plot_alignment(
             (circle.anchor_x + circle.center_x) / 2.0,
             circle.anchor_y + (circle.center_y - circle.anchor_y) * 0.45,
         )
-        path = Path(
+        path = MplPath(
             [
                 (circle.anchor_x, circle.anchor_y),
                 control_point,
                 (circle.center_x, contact_y),
             ],
-            [Path.MOVETO, Path.CURVE3, Path.CURVE3],
+            [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3],
         )
         ax.add_patch(
             patches.PathPatch(
@@ -878,13 +878,13 @@ def plot_alignment(
             (circle.anchor_x + circle.center_x) / 2.0,
             circle.anchor_y + (circle.center_y - circle.anchor_y) * 0.45,
         )
-        path = Path(
+        path = MplPath(
             [
                 (circle.anchor_x, circle.anchor_y),
                 control_point,
                 (circle.center_x, contact_y),
             ],
-            [Path.MOVETO, Path.CURVE3, Path.CURVE3],
+            [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3],
         )
         ax.add_patch(
             patches.PathPatch(
