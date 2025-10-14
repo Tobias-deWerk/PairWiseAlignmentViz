@@ -19,8 +19,10 @@ Additional tuning parameters can be supplied through optional flags:
 - `--tick-interval`: spacing (in bp) for annotating local coordinate tick marks along each stream (default: 10,000; set to 0 to disable).
 
 Gap loops now expand sideways so their arc length reflects the amount of additional
-sequence introduced by the indel, while the rendered tick marks help relate those
-loops back to local nucleotide coordinates when large insertions accumulate.
+sequence introduced by the indel. To keep dense regions legible the loops bloom on
+one side instead of folding back across themselves, avoiding intersections with
+neighboring glyphs. The rendered tick marks help relate those loops back to local
+nucleotide coordinates when large insertions accumulate.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and

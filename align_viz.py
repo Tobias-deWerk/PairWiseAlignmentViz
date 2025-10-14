@@ -40,7 +40,7 @@ def approximate_loop_arc_length(length: int, amplitude: float, width: float) -> 
     for idx in range(length):
         phase = idx / denom if denom > 0 else 0.0
         vertical_shape = math.sin(math.pi * phase)
-        horizontal_shape = math.sin(2.0 * math.pi * phase)
+        horizontal_shape = math.sin(math.pi * phase) ** 2
         x = width * horizontal_shape
         y = amplitude * vertical_shape
         if idx == 0:
@@ -458,7 +458,7 @@ def construct_stream_paths(
             for idx, pos in enumerate(indices):
                 phase = idx / denom if denom > 0 else 0.5
                 vertical_shape = math.sin(math.pi * phase)
-                horizontal_shape = math.sin(2.0 * math.pi * phase)
+                horizontal_shape = math.sin(math.pi * phase) ** 2
                 if run.stream == "reference":
                     query_offsets[pos] = max(
                         query_offsets[pos], amplitude * vertical_shape
