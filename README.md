@@ -20,22 +20,24 @@ Additional tuning parameters can be supplied through optional flags:
 - `--backbone-gap`: vertical distance between the query and reference backbones (default: 1.0; lower values bring the streams closer together).
 - `--backbone-thickness`: line width used for the backbone paths (default: 2.0).
 - `--bump-scale`: multiplier applied to weak-alignment bump heights (default: 1.0).
+- `--gap-circle-scale`: converts gap lengths (in bp) to the rendered circle diameter (default: 0.02; smaller values tighten the balloons).
+- `--mismatch-line-width`: controls the thickness of mismatch ladder rungs (default: 1.2).
 
-Gap loops now bloom to alternating sides so the strands do not collide with their
-neighbors. Their shapes scale smoothly with the indel length while remaining
-bounded, preventing the "pulled string" artefacts that previously dragged long
-insertions across the figure. A `+<length>` annotation is placed at the apex of
-each loop (for gaps that exceed `--min-gap-size`) so the amount of inserted
-sequence remains immediately visible even though the rendered curve is compact.
-The debug output (described below) also records the actual loop geometry metrics
-for downstream inspection.
+Large gaps are now rendered as balloon glyphs: each indel spawns a circle whose
+diameter scales with the gap length and whose center sits at half the scaled
+height above (query insertions) or below (reference insertions) the backbone.
+The circles are jittered horizontally when necessary so they do not overlap, and
+a curved stem ties each balloon back to the backbone at the precise gap
+position. Every balloon receives a `+<length>` label so the inserted bases are
+obvious at a glance. Shorter gaps (below `--min-gap-size`) continue to render as
+compact beaks that hug the backbone.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and
 `<output>_reference_stream.tsv`. Each row records the column index, global and
 per-stream coordinates, local nucleotide positions, feature flags, and (when
-applicable) the loop size, amplitude, width, displayed arc length, and blooming
-direction. This makes it straightforward to audit how loop glyphs were scaled
-and oriented if you need to refine their presentation.
+applicable) the gap circle geometry (anchor position, center, radius, and
+applied jitter). This makes it straightforward to audit how the balloons were
+scaled and displaced if you need to refine their presentation.
 
 The script accepts any pairwise alignment FASTA that contains exactly two sequences of equal length (including gap characters) such as MAFFT pairwise outputs.
