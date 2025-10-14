@@ -17,6 +17,9 @@ Additional tuning parameters can be supplied through optional flags:
 - `--min-sequence-identity`: minimum identity required to avoid flagging a segment as weakly aligned (default: 0.7).
 - `--window-size`: window length for scanning long regions for weak alignment (default: 20).
 - `--tick-interval`: spacing (in bp) for annotating local coordinate tick marks along each stream (default: 10,000; set to 0 to disable).
+- `--backbone-gap`: vertical distance between the query and reference backbones (default: 1.0; lower values bring the streams closer together).
+- `--backbone-thickness`: line width used for the backbone paths (default: 2.0).
+- `--bump-scale`: multiplier applied to weak-alignment bump heights (default: 1.0).
 
 Gap loops now bloom to alternating sides so the strands do not collide with their
 neighbors. Their shapes scale smoothly with the indel length while remaining

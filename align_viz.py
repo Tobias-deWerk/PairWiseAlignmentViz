@@ -142,6 +142,24 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=10_000,
         help="Spacing for local coordinate tick marks (set to 0 to disable)",
     )
+    parser.add_argument(
+        "--backbone-gap",
+        type=float,
+        default=1.0,
+        help="Vertical distance between the query and reference backbones",
+    )
+    parser.add_argument(
+        "--backbone-thickness",
+        type=float,
+        default=2.0,
+        help="Line width used when drawing the query and reference backbones",
+    )
+    parser.add_argument(
+        "--bump-scale",
+        type=float,
+        default=1.0,
+        help="Multiplier applied to weak-alignment bump heights",
+    )
     return parser.parse_args(argv)
 
 
@@ -387,6 +405,8 @@ def construct_stream_paths(
     data: AlignmentData,
     min_gap_size: int,
     weak_regions: Sequence[WeakRegion],
+    backbone_gap: float,
+    bump_scale: float,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -405,7 +425,7 @@ def construct_stream_paths(
         if not data.is_query_gap[idx] and not data.is_reference_gap[idx]:
             current_global += 1.0
 
-    query_baseline = 1.0
+    query_baseline = backbone_gap
     reference_baseline = 0.0
     query_offsets = np.zeros(n)
     reference_offsets = np.zeros(n)
@@ -484,7 +504,8 @@ def construct_stream_paths(
         length = region.end - region.start + 1
         if length <= 0:
             continue
-        amplitude = min(0.5, 0.12 + 0.3 * (1.0 - region.identity))
+        base_amplitude = min(0.5, 0.12 + 0.3 * (1.0 - region.identity))
+        amplitude = max(0.0, base_amplitude * max(bump_scale, 0.0))
         for idx, pos in enumerate(range(region.start, region.end + 1)):
             t = (idx + 1) / (length + 1)
             shape = math.sin(math.pi * t)
@@ -667,16 +688,26 @@ def plot_alignment(
     query_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
     reference_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
     min_gap_size: int,
+    backbone_thickness: float,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
-    ax.plot(query_x, query_positions, color="#222222", linewidth=2.0, label="Query")
+    line_width = max(backbone_thickness, 0.0)
+    ax.plot(
+        query_x,
+        query_positions,
+        color="#222222",
+        linewidth=line_width if line_width > 0 else 0.0,
+        label="Query",
+        zorder=5,
+    )
     ax.plot(
         reference_x,
         reference_positions,
         color="#222222",
-        linewidth=2.0,
+        linewidth=line_width if line_width > 0 else 0.0,
         label="Reference",
+        zorder=5,
     )
 
     tick_length = 0.06
@@ -740,12 +771,19 @@ def plot_alignment(
         top = query_positions[idx]
         bottom = reference_positions[idx]
         middle = (top + bottom) / 2.0
-        ax.plot([x_pos, x_pos], [top, middle], color=nucleotide_color(q_char), linewidth=1.2)
+        ax.plot(
+            [x_pos, x_pos],
+            [top, middle],
+            color=nucleotide_color(q_char),
+            linewidth=1.2,
+            zorder=3,
+        )
         ax.plot(
             [x_pos, x_pos],
             [middle, bottom],
             color=nucleotide_color(r_char),
             linewidth=1.2,
+            zorder=3,
         )
 
     for run in data.gap_runs:
@@ -819,7 +857,13 @@ def main(argv: Sequence[str]) -> int:
             global_extent,
             query_loop_metrics,
             reference_loop_metrics,
-        ) = construct_stream_paths(data, args.min_gap_size, data.weak_regions)
+        ) = construct_stream_paths(
+            data,
+            args.min_gap_size,
+            data.weak_regions,
+            args.backbone_gap,
+            args.bump_scale,
+        )
         write_stream_debug_tables(
             args.output,
             data,
@@ -847,6 +891,7 @@ def main(argv: Sequence[str]) -> int:
             query_loop_metrics,
             reference_loop_metrics,
             args.min_gap_size,
+            args.backbone_thickness,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)
