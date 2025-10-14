@@ -17,10 +17,6 @@ from typing import Dict, List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import patches
-from matplotlib import transforms
-from matplotlib.path import Path as MplPath
-
 
 NUCLEOTIDE_COLORS: Dict[str, str] = {
     "A": "#4daf4a",  # green
@@ -42,17 +38,6 @@ class WeakRegion:
     start: int
     end: int
     identity: float
-
-
-@dataclass
-class GapCircle:
-    run: GapRun
-    anchor_x: float
-    anchor_y: float
-    center_x: float
-    center_y: float
-    radius: float
-    jitter: float
 
 
 @dataclass
@@ -129,15 +114,6 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Multiplier applied to weak-alignment bump heights",
-    )
-    parser.add_argument(
-        "--gap-circle-scale",
-        type=float,
-        default=0.02,
-        help=(
-            "Scale factor that converts gap length (bp) to circle diameter units; "
-            "center height tracks half the gap length after scaling"
-        ),
     )
     parser.add_argument(
         "--mismatch-line-width",
@@ -386,33 +362,12 @@ def nucleotide_color(base: str) -> str:
     return NUCLEOTIDE_COLORS.get(base.upper(), "#888888")
 
 
-def resolve_circle_position(
-    base_x: float, radius: float, existing: List[Tuple[float, float]]
-) -> float:
-    """Return a jittered x position that prevents circle overlap."""
-
-    spacing = 0.05
-    if all(abs(base_x - x) >= radius + r + spacing for x, r in existing):
-        return base_x
-
-    step = max(radius * 0.5, 0.2)
-    for attempt in range(1, 256):
-        magnitude = math.ceil(attempt / 2) * step
-        direction = -1 if attempt % 2 == 0 else 1
-        candidate = base_x + magnitude * direction
-        if all(abs(candidate - x) >= radius + r + spacing for x, r in existing):
-            return candidate
-
-    return base_x
-
-
 def construct_stream_paths(
     data: AlignmentData,
     min_gap_size: int,
     weak_regions: Sequence[WeakRegion],
     backbone_gap: float,
     bump_scale: float,
-    gap_circle_scale: float,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -420,8 +375,6 @@ def construct_stream_paths(
     np.ndarray,
     np.ndarray,
     float,
-    List[GapCircle],
-    List[GapCircle],
 ]:
     n = len(data.query)
     global_x = np.zeros(n)
@@ -449,24 +402,26 @@ def construct_stream_paths(
             continue
 
         base_x = global_x[run.start]
-        if length < min_gap_size:
-            amplitude = min(max_beak_height, gap_height_scale * length)
-            width = min(max_beak_width, 0.4 + 0.1 * length)
-            denom = max(length - 1, 1)
-            for idx, pos in enumerate(indices):
+        amplitude = min(max_beak_height, gap_height_scale * length)
+        width = min(max_beak_width, 0.4 + 0.1 * length)
+        denom = max(length - 1, 1)
+        for idx, pos in enumerate(indices):
+            if length == 1:
+                t = 0.5
+            else:
                 t = idx / denom if denom > 0 else 0.5
-                vertical_shape = 1.0 - abs(2.0 * t - 1.0)
-                horizontal_shape = math.sin(math.pi * t)
-                if run.stream == "reference":
-                    query_offsets[pos] = max(
-                        query_offsets[pos], amplitude * vertical_shape
-                    )
-                    query_x[pos] = base_x + width * horizontal_shape
-                else:
-                    reference_offsets[pos] = min(
-                        reference_offsets[pos], -amplitude * vertical_shape
-                    )
-                    reference_x[pos] = base_x + width * horizontal_shape
+            vertical_shape = 1.0 - abs(2.0 * t - 1.0)
+            horizontal_shape = math.sin(math.pi * t)
+            if run.stream == "reference":
+                query_offsets[pos] = max(
+                    query_offsets[pos], amplitude * vertical_shape
+                )
+                query_x[pos] = base_x + width * horizontal_shape
+            else:
+                reference_offsets[pos] = min(
+                    reference_offsets[pos], -amplitude * vertical_shape
+                )
+                reference_x[pos] = base_x + width * horizontal_shape
 
     for region in weak_regions:
         length = region.end - region.start + 1
@@ -485,58 +440,6 @@ def construct_stream_paths(
     query_positions = query_baseline + query_offsets
     reference_positions = reference_baseline + reference_offsets
 
-    circle_scale = max(gap_circle_scale, 0.0)
-    min_diameter = 0.08
-    query_circles: List[GapCircle] = []
-    reference_circles: List[GapCircle] = []
-    circle_registry = {"query": [], "reference": []}
-
-    for run in data.gap_runs:
-        length = run.length
-        if length <= 0 or length < min_gap_size:
-            continue
-
-        if circle_scale <= 0.0:
-            continue
-
-        anchor_idx = run.start + run.length // 2
-        anchor_idx = min(max(anchor_idx, run.start), run.end)
-
-        if run.stream == "reference":
-            anchor_x = float(query_x[anchor_idx])
-            anchor_y = float(query_positions[anchor_idx])
-            stream_key = "query"
-        else:
-            anchor_x = float(reference_x[anchor_idx])
-            anchor_y = float(reference_positions[anchor_idx])
-            stream_key = "reference"
-
-        diameter = max(length * circle_scale, min_diameter)
-        radius = diameter / 2.0
-        stem_length = max(radius * 0.25, 0.05)
-        sign = 1.0 if run.stream == "reference" else -1.0
-
-        target_list = circle_registry[stream_key]
-        center_x = resolve_circle_position(anchor_x, radius, target_list)
-        jitter = center_x - anchor_x
-        center_y = anchor_y + sign * (radius + stem_length)
-
-        circle = GapCircle(
-            run=run,
-            anchor_x=anchor_x,
-            anchor_y=anchor_y,
-            center_x=center_x,
-            center_y=center_y,
-            radius=radius,
-            jitter=jitter,
-        )
-
-        target_list.append((center_x, radius))
-        if stream_key == "query":
-            query_circles.append(circle)
-        else:
-            reference_circles.append(circle)
-
     return (
         global_x,
         query_x,
@@ -544,8 +447,6 @@ def construct_stream_paths(
         query_positions,
         reference_positions,
         current_global,
-        query_circles,
-        reference_circles,
     )
 
 
@@ -583,8 +484,6 @@ def write_stream_debug_tables(
     reference_x: np.ndarray,
     query_positions: np.ndarray,
     reference_positions: np.ndarray,
-    query_circles: Sequence[GapCircle],
-    reference_circles: Sequence[GapCircle],
 ) -> None:
     """Write TSV tables describing the computed stream coordinates."""
 
@@ -614,35 +513,16 @@ def write_stream_debug_tables(
         for pos in range(run.start, run.end + 1):
             target[pos] = run.length
 
-    query_circle_lookup: Dict[int, GapCircle] = {}
-    for circle in query_circles:
-        for pos in range(circle.run.start, circle.run.end + 1):
-            query_circle_lookup[pos] = circle
-
-    reference_circle_lookup: Dict[int, GapCircle] = {}
-    for circle in reference_circles:
-        for pos in range(circle.run.start, circle.run.end + 1):
-            reference_circle_lookup[pos] = circle
-
     header = (
         "column_index\tglobal_x\tstream_x\tstream_y\tlocal_position\tcharacter"
         "\tpartner_character\tis_gap\tis_match\tis_weak\tgap_run_length"
-        "\tglobal_delta\tcircle_gap_length\tcircle_center_x\tcircle_center_y"
-        "\tcircle_radius\tcircle_anchor_x\tcircle_anchor_y\tcircle_jitter\n"
+        "\tglobal_delta\n"
     )
 
     with query_path.open("w", encoding="utf-8") as handle:
         handle.write(header)
         for idx in range(n):
             global_value = global_values[idx]
-            circle = query_circle_lookup.get(idx)
-            circle_length = circle.run.length if circle else ""
-            circle_center_x = fmt_float(circle.center_x) if circle else ""
-            circle_center_y = fmt_float(circle.center_y) if circle else ""
-            circle_radius = fmt_float(circle.radius) if circle else ""
-            circle_anchor_x = fmt_float(circle.anchor_x) if circle else ""
-            circle_anchor_y = fmt_float(circle.anchor_y) if circle else ""
-            circle_jitter = fmt_float(circle.jitter) if circle else ""
             handle.write(
                 "\t".join(
                     [
@@ -658,13 +538,6 @@ def write_stream_debug_tables(
                         "true" if data.is_weak[idx] else "false",
                         str(query_gap_lengths.get(idx, 0)),
                         fmt_float(global_deltas[idx]),
-                        str(circle_length),
-                        circle_center_x,
-                        circle_center_y,
-                        circle_radius,
-                        circle_anchor_x,
-                        circle_anchor_y,
-                        circle_jitter,
                     ]
                 )
                 + "\n"
@@ -674,14 +547,6 @@ def write_stream_debug_tables(
         handle.write(header)
         for idx in range(n):
             global_value = global_values[idx]
-            circle = reference_circle_lookup.get(idx)
-            circle_length = circle.run.length if circle else ""
-            circle_center_x = fmt_float(circle.center_x) if circle else ""
-            circle_center_y = fmt_float(circle.center_y) if circle else ""
-            circle_radius = fmt_float(circle.radius) if circle else ""
-            circle_anchor_x = fmt_float(circle.anchor_x) if circle else ""
-            circle_anchor_y = fmt_float(circle.anchor_y) if circle else ""
-            circle_jitter = fmt_float(circle.jitter) if circle else ""
             handle.write(
                 "\t".join(
                     [
@@ -697,13 +562,6 @@ def write_stream_debug_tables(
                         "true" if data.is_weak[idx] else "false",
                         str(reference_gap_lengths.get(idx, 0)),
                         fmt_float(global_deltas[idx]),
-                        str(circle_length),
-                        circle_center_x,
-                        circle_center_y,
-                        circle_radius,
-                        circle_anchor_x,
-                        circle_anchor_y,
-                        circle_jitter,
                     ]
                 )
                 + "\n"
@@ -723,8 +581,6 @@ def plot_alignment(
     dpi: int,
     output: Path,
     tick_interval: int,
-    query_circles: Sequence[GapCircle],
-    reference_circles: Sequence[GapCircle],
     backbone_thickness: float,
     mismatch_line_width: float,
 ) -> None:
@@ -826,121 +682,26 @@ def plot_alignment(
                 zorder=3,
             )
 
-    connector_color = "#555555"
-    circle_edge_color = "#222222"
-    circle_face_color = "#ffffff"
-
     x_min = global_x[0] if len(global_x) > 0 else 0.0
     x_max = max(global_extent, x_min + 1.0)
 
-    top_candidates: List[float] = [float(np.max(query_positions))] if len(query_positions) else []
-    top_candidates.extend(circle.center_y + circle.radius for circle in query_circles)
-    bottom_candidates: List[float] = [float(np.min(reference_positions))] if len(reference_positions) else []
-    bottom_candidates.extend(circle.center_y - circle.radius for circle in reference_circles)
+    y_min_candidates: List[float] = []
+    if len(reference_positions):
+        y_min_candidates.append(float(np.min(reference_positions)))
+    if len(query_positions):
+        y_min_candidates.append(float(np.min(query_positions)))
+    y_max_candidates: List[float] = []
+    if len(query_positions):
+        y_max_candidates.append(float(np.max(query_positions)))
+    if len(reference_positions):
+        y_max_candidates.append(float(np.max(reference_positions)))
 
-    y_min = min(bottom_candidates) - 0.2 if bottom_candidates else -0.5
-    y_max = max(top_candidates) + 0.2 if top_candidates else 1.5
+    y_min = min(y_min_candidates) - 0.2 if y_min_candidates else -0.5
+    y_max = max(y_max_candidates) + 0.2 if y_max_candidates else 1.5
 
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
-    # Ensure the renderer is ready so coordinate transforms are accurate.
-    fig.canvas.draw()
-
-    x0y0 = ax.transData.transform((0.0, 0.0))
-    x1y0 = ax.transData.transform((1.0, 0.0))
-    x0y1 = ax.transData.transform((0.0, 1.0))
-    px_per_x = x1y0[0] - x0y0[0]
-    px_per_y = x0y1[1] - x0y0[1]
-    y_scale = px_per_x / px_per_y if px_per_y != 0 else 1.0
-
-    for circle in query_circles:
-        contact_y = circle.center_y - circle.radius
-        control_point = (
-            (circle.anchor_x + circle.center_x) / 2.0,
-            circle.anchor_y + (circle.center_y - circle.anchor_y) * 0.45,
-        )
-        path = MplPath(
-            [
-                (circle.anchor_x, circle.anchor_y),
-                control_point,
-                (circle.center_x, contact_y),
-            ],
-            [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3],
-        )
-        ax.add_patch(
-            patches.PathPatch(
-                path,
-                fill=False,
-                linewidth=1.0,
-                color=connector_color,
-                zorder=4,
-            )
-        )
-        circle_patch = patches.Ellipse(
-            (circle.center_x, circle.center_y),
-            width=2 * circle.radius,
-            height=2 * circle.radius * y_scale,
-            facecolor=circle_face_color,
-            edgecolor=circle_edge_color,
-            linewidth=1.2,
-            zorder=4.5,
-        )
-        ax.add_patch(circle_patch)
-        ax.text(
-            circle.center_x,
-            circle.center_y + circle.radius + 0.05,
-            f"+{circle.run.length:,}",
-            fontsize=6,
-            ha="center",
-            va="bottom",
-            color="#222222",
-            zorder=6,
-        )
-
-    for circle in reference_circles:
-        contact_y = circle.center_y + circle.radius
-        control_point = (
-            (circle.anchor_x + circle.center_x) / 2.0,
-            circle.anchor_y + (circle.center_y - circle.anchor_y) * 0.45,
-        )
-        path = MplPath(
-            [
-                (circle.anchor_x, circle.anchor_y),
-                control_point,
-                (circle.center_x, contact_y),
-            ],
-            [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3],
-        )
-        ax.add_patch(
-            patches.PathPatch(
-                path,
-                fill=False,
-                linewidth=1.0,
-                color=connector_color,
-                zorder=4,
-            )
-        )
-        circle_patch = patches.Ellipse(
-            (circle.center_x, circle.center_y),
-            width=2 * circle.radius,
-            height=2 * circle.radius * y_scale,
-            facecolor=circle_face_color,
-            edgecolor=circle_edge_color,
-            linewidth=1.2,
-            zorder=4.5,
-        )
-        ax.add_patch(circle_patch)
-        ax.text(
-            circle.center_x,
-            circle.center_y - circle.radius - 0.05,
-            f"+{circle.run.length:,}",
-            fontsize=6,
-            ha="center",
-            va="top",
-            color="#222222",
-            zorder=6,
-        )
     ax.axis("off")
 
     fig.savefig(output, bbox_inches="tight")
@@ -971,15 +732,12 @@ def main(argv: Sequence[str]) -> int:
             query_positions,
             reference_positions,
             global_extent,
-            query_circles,
-            reference_circles,
         ) = construct_stream_paths(
             data,
             args.min_gap_size,
             data.weak_regions,
             args.backbone_gap,
             args.bump_scale,
-            args.gap_circle_scale,
         )
         write_stream_debug_tables(
             args.output,
@@ -989,8 +747,6 @@ def main(argv: Sequence[str]) -> int:
             reference_x,
             query_positions,
             reference_positions,
-            query_circles,
-            reference_circles,
         )
         plot_alignment(
             data,
@@ -1005,8 +761,6 @@ def main(argv: Sequence[str]) -> int:
             args.dpi,
             args.output,
             args.tick_interval,
-            query_circles,
-            reference_circles,
             args.backbone_thickness,
             args.mismatch_line_width,
         )
