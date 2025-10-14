@@ -319,37 +319,21 @@ def nucleotide_color(base: str) -> str:
     return NUCLEOTIDE_COLORS.get(base.upper(), "#888888")
 
 
-def construct_stream_paths(
+def construct_stream_positions(
     data: AlignmentData,
     min_gap_size: int,
     weak_regions: Sequence[WeakRegion],
-) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    float,
-]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     n = len(data.query)
-    global_x = np.zeros(n)
-    current_global = 0.0
-    for idx in range(n):
-        global_x[idx] = current_global
-        if not data.is_query_gap[idx] and not data.is_reference_gap[idx]:
-            current_global += 1.0
-
+    x = np.arange(n)
     query_baseline = 1.0
     reference_baseline = 0.0
     query_offsets = np.zeros(n)
     reference_offsets = np.zeros(n)
-    query_x = global_x.copy()
-    reference_x = global_x.copy()
 
     gap_height_scale = 0.04
     loop_height_scale = 0.07
     max_loop_height = 0.8
-    max_loop_width = 1.2
 
     for run in data.gap_runs:
         indices = range(run.start, run.end + 1)
@@ -357,43 +341,30 @@ def construct_stream_paths(
         if length <= 0:
             continue
 
-        base_x = global_x[run.start]
         if length < min_gap_size:
+            # Bird beak glyph: triangular profile whose peak height matches gap length
             amplitude = min(max_loop_height, gap_height_scale * length)
-            width = min(max_loop_width, 0.4 + 0.1 * length)
             denom = max(length - 1, 1)
             for idx, pos in enumerate(indices):
-                t = idx / denom if denom > 0 else 0.5
-                vertical_shape = 1.0 - abs(2.0 * t - 1.0)
-                horizontal_shape = math.sin(math.pi * t)
+                t = idx / denom
+                shape = 1.0 - abs(2.0 * t - 1.0)
                 if run.stream == "reference":
-                    query_offsets[pos] = max(
-                        query_offsets[pos], amplitude * vertical_shape
-                    )
-                    query_x[pos] = base_x + width * horizontal_shape
+                    query_offsets[pos] = max(query_offsets[pos], amplitude * shape)
                 else:
                     reference_offsets[pos] = min(
-                        reference_offsets[pos], -amplitude * vertical_shape
+                        reference_offsets[pos], -amplitude * shape
                     )
-                    reference_x[pos] = base_x + width * horizontal_shape
         else:
             amplitude = min(max_loop_height, loop_height_scale * math.log1p(length))
-            width = min(max_loop_width, 0.6 + 0.15 * length)
-            denom = max(length - 1, 1)
             for idx, pos in enumerate(indices):
-                phase = idx / denom if denom > 0 else 0.5
-                vertical_shape = math.sin(math.pi * phase)
-                horizontal_shape = math.sin(2.0 * math.pi * phase)
+                t = (idx + 1) / (length + 1)
+                shape = math.sin(math.pi * t)
                 if run.stream == "reference":
-                    query_offsets[pos] = max(
-                        query_offsets[pos], amplitude * vertical_shape
-                    )
-                    query_x[pos] = base_x + width * horizontal_shape
+                    query_offsets[pos] = max(query_offsets[pos], amplitude * shape)
                 else:
                     reference_offsets[pos] = min(
-                        reference_offsets[pos], -amplitude * vertical_shape
+                        reference_offsets[pos], -amplitude * shape
                     )
-                    reference_x[pos] = base_x + width * horizontal_shape
 
     for region in weak_regions:
         length = region.end - region.start + 1
@@ -411,24 +382,14 @@ def construct_stream_paths(
     query_positions = query_baseline + query_offsets
     reference_positions = reference_baseline + reference_offsets
 
-    return (
-        global_x,
-        query_x,
-        reference_x,
-        query_positions,
-        reference_positions,
-        current_global,
-    )
+    return x, query_positions, reference_positions
 
 
 def plot_alignment(
     data: AlignmentData,
-    global_x: np.ndarray,
-    query_x: np.ndarray,
-    reference_x: np.ndarray,
+    x: np.ndarray,
     query_positions: np.ndarray,
     reference_positions: np.ndarray,
-    global_extent: float,
     width: float,
     height: float,
     dpi: int,
@@ -436,26 +397,14 @@ def plot_alignment(
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
-    ax.plot(query_x, query_positions, color="#222222", linewidth=2.0, label="Query")
-    ax.plot(
-        reference_x,
-        reference_positions,
-        color="#222222",
-        linewidth=2.0,
-        label="Reference",
-    )
+    ax.plot(x, query_positions, color="#222222", linewidth=2.0, label="Query")
+    ax.plot(x, reference_positions, color="#222222", linewidth=2.0, label="Reference")
 
     weak_spans = [(region.start, region.end) for region in data.weak_regions]
     for start, end in weak_spans:
-        span_start = global_x[start]
-        span_end = global_x[end]
-        if math.isclose(span_start, span_end):
-            span_end = span_start + 1e-3
-        ax.axvspan(span_start, span_end, color="#f0f0f0", alpha=0.7, zorder=0)
+        ax.axvspan(start, end, color="#f0f0f0", alpha=0.7, zorder=0)
 
-    for idx, (x_pos, q_char, r_char) in enumerate(
-        zip(global_x, data.query, data.reference)
-    ):
+    for idx, (x_pos, q_char, r_char) in enumerate(zip(x, data.query, data.reference)):
         if data.is_query_gap[idx] or data.is_reference_gap[idx]:
             continue
         if any(region.start <= idx <= region.end for region in data.weak_regions):
@@ -473,9 +422,7 @@ def plot_alignment(
             linewidth=1.2,
         )
 
-    x_min = global_x[0] if len(global_x) > 0 else 0.0
-    x_max = max(global_extent, x_min + 1.0)
-    ax.set_xlim(x_min, x_max)
+    ax.set_xlim(x[0], x[-1] if len(x) > 1 else x[0] + 1)
     y_min = min(np.min(reference_positions) - 0.2, -0.5)
     y_max = max(np.max(query_positions) + 0.2, 1.5)
     ax.set_ylim(y_min, y_max)
@@ -502,22 +449,14 @@ def main(argv: Sequence[str]) -> int:
             args.min_sequence_identity,
             args.window_size,
         )
-        (
-            global_x,
-            query_x,
-            reference_x,
-            query_positions,
-            reference_positions,
-            global_extent,
-        ) = construct_stream_paths(data, args.min_gap_size, data.weak_regions)
+        x, query_positions, reference_positions = construct_stream_positions(
+            data, args.min_gap_size, data.weak_regions
+        )
         plot_alignment(
             data,
-            global_x,
-            query_x,
-            reference_x,
+            x,
             query_positions,
             reference_positions,
-            global_extent,
             args.width,
             args.height,
             args.dpi,
