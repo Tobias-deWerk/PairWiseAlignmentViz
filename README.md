@@ -17,4 +17,10 @@ Additional tuning parameters can be supplied through optional flags:
 - `--min-sequence-identity`: minimum identity required to avoid flagging a segment as weakly aligned (default: 0.7).
 - `--window-size`: window length for scanning long regions for weak alignment (default: 20).
 
+For troubleshooting, the tool also emits two TSV files alongside the requested
+visualization output: `<output>_query_stream.tsv` and
+`<output>_reference_stream.tsv`. Each row records the column index, global and
+per-stream coordinates, local nucleotide positions, and feature flags so you can
+inspect how loops, beaks, and weak regions are constructed.
+
 The script accepts any pairwise alignment FASTA that contains exactly two sequences of equal length (including gap characters) such as MAFFT pairwise outputs.
