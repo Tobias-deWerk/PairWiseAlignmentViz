@@ -28,16 +28,16 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
 }
 
 
-def approximate_loop_arc_length(length: int, amplitude: float, width: float) -> float:
-    if length <= 0:
+def approximate_loop_arc_length(sample_points: int, amplitude: float, width: float) -> float:
+    if sample_points <= 1:
         return 0.0
 
-    denom = max(length - 1, 1)
+    denom = max(sample_points - 1, 1)
     prev_x = 0.0
     prev_y = 0.0
     total = 0.0
 
-    for idx in range(length):
+    for idx in range(sample_points):
         phase = idx / denom if denom > 0 else 0.0
         vertical_shape = math.sin(math.pi * phase)
         horizontal_shape = math.sin(math.pi * phase) ** 2
@@ -52,33 +52,22 @@ def approximate_loop_arc_length(length: int, amplitude: float, width: float) -> 
     return total
 
 
-def compute_gap_loop_width(length: int, amplitude: float) -> float:
-    if length <= 1:
-        return 0.0
+def balloon_shape_parameters(length: int) -> Tuple[float, float]:
+    """Return (amplitude, width) for a gap run of the given length."""
 
-    target_arc = float(length)
-    min_arc = approximate_loop_arc_length(length, amplitude, 0.0)
-    if target_arc <= min_arc:
-        return 0.0
+    if length <= 0:
+        return 0.0, 0.0
 
-    width_upper = max(1.0, 0.3 * length)
-    max_upper = 0.8 * length + 2.0
-    current_arc = approximate_loop_arc_length(length, amplitude, width_upper)
-    while current_arc < target_arc and width_upper < max_upper:
-        width_upper = min(max_upper, width_upper * 1.5)
-        current_arc = approximate_loop_arc_length(length, amplitude, width_upper)
+    reference_length = 250.0
+    min_height = 0.2
+    max_height = 1.6
+    min_width = 0.5
+    max_width = 3.2
 
-    lo = 0.0
-    hi = width_upper
-    for _ in range(40):
-        mid = (lo + hi) / 2.0
-        arc = approximate_loop_arc_length(length, amplitude, mid)
-        if arc < target_arc:
-            lo = mid
-        else:
-            hi = mid
-
-    return hi
+    norm = length / (length + reference_length)
+    amplitude = min_height + (max_height - min_height) * norm
+    width = min_width + (max_width - min_width) * norm
+    return amplitude, width
 
 
 @dataclass
@@ -405,6 +394,8 @@ def construct_stream_paths(
     np.ndarray,
     np.ndarray,
     float,
+    Dict[int, Tuple[int, float, float, float, int]],
+    Dict[int, Tuple[int, float, float, float, int]],
 ]:
     n = len(data.query)
     global_x = np.zeros(n)
@@ -422,9 +413,16 @@ def construct_stream_paths(
     reference_x = global_x.copy()
 
     gap_height_scale = 0.04
-    loop_height_scale = 0.07
-    max_loop_height = 0.8
     max_beak_width = 1.2
+    max_loop_height = 1.6
+
+    query_loop_metrics: Dict[int, Tuple[int, float, float, float, int]] = {}
+    reference_loop_metrics: Dict[int, Tuple[int, float, float, float, int]] = {}
+
+    loop_states = {
+        "query": {"last_end": -math.inf, "direction": 1},
+        "reference": {"last_end": -math.inf, "direction": -1},
+    }
 
     for run in data.gap_runs:
         indices = range(run.start, run.end + 1)
@@ -452,9 +450,19 @@ def construct_stream_paths(
                     )
                     reference_x[pos] = base_x + width * horizontal_shape
         else:
-            amplitude = min(max_loop_height, loop_height_scale * math.log1p(length))
-            width = compute_gap_loop_width(length, amplitude)
+            amplitude, width = balloon_shape_parameters(length)
+            state = loop_states[run.stream]
+            separation = run.start - state["last_end"]
+            if separation <= 2:
+                state["direction"] *= -1
+            direction = state["direction"]
+            state["last_end"] = run.end
+
             denom = max(length - 1, 1)
+            info_dict = (
+                query_loop_metrics if run.stream == "reference" else reference_loop_metrics
+            )
+            display_arc = approximate_loop_arc_length(length, amplitude, width)
             for idx, pos in enumerate(indices):
                 phase = idx / denom if denom > 0 else 0.5
                 vertical_shape = math.sin(math.pi * phase)
@@ -463,12 +471,14 @@ def construct_stream_paths(
                     query_offsets[pos] = max(
                         query_offsets[pos], amplitude * vertical_shape
                     )
-                    query_x[pos] = base_x + width * horizontal_shape
+                    query_x[pos] = base_x + direction * width * horizontal_shape
+                    info_dict[pos] = (length, amplitude, width, display_arc, direction)
                 else:
                     reference_offsets[pos] = min(
                         reference_offsets[pos], -amplitude * vertical_shape
                     )
-                    reference_x[pos] = base_x + width * horizontal_shape
+                    reference_x[pos] = base_x + direction * width * horizontal_shape
+                    info_dict[pos] = (length, amplitude, width, display_arc, direction)
 
     for region in weak_regions:
         length = region.end - region.start + 1
@@ -493,6 +503,8 @@ def construct_stream_paths(
         query_positions,
         reference_positions,
         current_global,
+        query_loop_metrics,
+        reference_loop_metrics,
     )
 
 
@@ -530,6 +542,8 @@ def write_stream_debug_tables(
     reference_x: np.ndarray,
     query_positions: np.ndarray,
     reference_positions: np.ndarray,
+    query_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
+    reference_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
 ) -> None:
     """Write TSV tables describing the computed stream coordinates."""
 
@@ -561,13 +575,21 @@ def write_stream_debug_tables(
 
     header = (
         "column_index\tglobal_x\tstream_x\tstream_y\tlocal_position\tcharacter"
-        "\tpartner_character\tis_gap\tis_match\tis_weak\tgap_run_length\tglobal_delta\n"
+        "\tpartner_character\tis_gap\tis_match\tis_weak\tgap_run_length"
+        "\tglobal_delta\tloop_length\tloop_amplitude\tloop_width"
+        "\tloop_display_arc\tloop_direction\n"
     )
 
     with query_path.open("w", encoding="utf-8") as handle:
         handle.write(header)
         for idx in range(n):
             global_value = global_values[idx]
+            loop_tuple = query_loop_metrics.get(idx)
+            loop_length = loop_tuple[0] if loop_tuple else 0
+            loop_amp = loop_tuple[1] if loop_tuple else 0.0
+            loop_width = loop_tuple[2] if loop_tuple else 0.0
+            loop_arc = loop_tuple[3] if loop_tuple else 0.0
+            loop_direction = loop_tuple[4] if loop_tuple else 0
             handle.write(
                 "\t".join(
                     [
@@ -583,6 +605,11 @@ def write_stream_debug_tables(
                         "true" if data.is_weak[idx] else "false",
                         str(query_gap_lengths.get(idx, 0)),
                         fmt_float(global_deltas[idx]),
+                        str(loop_length),
+                        fmt_float(loop_amp),
+                        fmt_float(loop_width),
+                        fmt_float(loop_arc),
+                        "right" if loop_direction > 0 else ("left" if loop_direction < 0 else ""),
                     ]
                 )
                 + "\n"
@@ -592,6 +619,12 @@ def write_stream_debug_tables(
         handle.write(header)
         for idx in range(n):
             global_value = global_values[idx]
+            loop_tuple = reference_loop_metrics.get(idx)
+            loop_length = loop_tuple[0] if loop_tuple else 0
+            loop_amp = loop_tuple[1] if loop_tuple else 0.0
+            loop_width = loop_tuple[2] if loop_tuple else 0.0
+            loop_arc = loop_tuple[3] if loop_tuple else 0.0
+            loop_direction = loop_tuple[4] if loop_tuple else 0
             handle.write(
                 "\t".join(
                     [
@@ -607,6 +640,11 @@ def write_stream_debug_tables(
                         "true" if data.is_weak[idx] else "false",
                         str(reference_gap_lengths.get(idx, 0)),
                         fmt_float(global_deltas[idx]),
+                        str(loop_length),
+                        fmt_float(loop_amp),
+                        fmt_float(loop_width),
+                        fmt_float(loop_arc),
+                        "right" if loop_direction > 0 else ("left" if loop_direction < 0 else ""),
                     ]
                 )
                 + "\n"
@@ -626,6 +664,9 @@ def plot_alignment(
     dpi: int,
     output: Path,
     tick_interval: int,
+    query_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
+    reference_loop_metrics: Dict[int, Tuple[int, float, float, float, int]],
+    min_gap_size: int,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -707,6 +748,39 @@ def plot_alignment(
             linewidth=1.2,
         )
 
+    for run in data.gap_runs:
+        if run.length < min_gap_size:
+            continue
+        apex_idx = run.start + run.length // 2
+        if run.stream == "reference":
+            metrics = query_loop_metrics.get(apex_idx)
+            if metrics:
+                x_pos = float(query_x[apex_idx])
+                y_pos = float(query_positions[apex_idx])
+                ax.text(
+                    x_pos,
+                    y_pos + 0.05,
+                    f"+{run.length:,}",
+                    fontsize=6,
+                    ha="center",
+                    va="bottom",
+                    color="#222222",
+                )
+        else:
+            metrics = reference_loop_metrics.get(apex_idx)
+            if metrics:
+                x_pos = float(reference_x[apex_idx])
+                y_pos = float(reference_positions[apex_idx])
+                ax.text(
+                    x_pos,
+                    y_pos - 0.05,
+                    f"+{run.length:,}",
+                    fontsize=6,
+                    ha="center",
+                    va="top",
+                    color="#222222",
+                )
+
     x_min = global_x[0] if len(global_x) > 0 else 0.0
     x_max = max(global_extent, x_min + 1.0)
     ax.set_xlim(x_min, x_max)
@@ -743,6 +817,8 @@ def main(argv: Sequence[str]) -> int:
             query_positions,
             reference_positions,
             global_extent,
+            query_loop_metrics,
+            reference_loop_metrics,
         ) = construct_stream_paths(data, args.min_gap_size, data.weak_regions)
         write_stream_debug_tables(
             args.output,
@@ -752,6 +828,8 @@ def main(argv: Sequence[str]) -> int:
             reference_x,
             query_positions,
             reference_positions,
+            query_loop_metrics,
+            reference_loop_metrics,
         )
         plot_alignment(
             data,
@@ -766,6 +844,9 @@ def main(argv: Sequence[str]) -> int:
             args.dpi,
             args.output,
             args.tick_interval,
+            query_loop_metrics,
+            reference_loop_metrics,
+            args.min_gap_size,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)

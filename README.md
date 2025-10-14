@@ -18,16 +18,21 @@ Additional tuning parameters can be supplied through optional flags:
 - `--window-size`: window length for scanning long regions for weak alignment (default: 20).
 - `--tick-interval`: spacing (in bp) for annotating local coordinate tick marks along each stream (default: 10,000; set to 0 to disable).
 
-Gap loops now expand sideways so their arc length reflects the amount of additional
-sequence introduced by the indel. To keep dense regions legible the loops bloom on
-one side instead of folding back across themselves, avoiding intersections with
-neighboring glyphs. The rendered tick marks help relate those loops back to local
-nucleotide coordinates when large insertions accumulate.
+Gap loops now bloom to alternating sides so the strands do not collide with their
+neighbors. Their shapes scale smoothly with the indel length while remaining
+bounded, preventing the "pulled string" artefacts that previously dragged long
+insertions across the figure. A `+<length>` annotation is placed at the apex of
+each loop (for gaps that exceed `--min-gap-size`) so the amount of inserted
+sequence remains immediately visible even though the rendered curve is compact.
+The debug output (described below) also records the actual loop geometry metrics
+for downstream inspection.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and
 `<output>_reference_stream.tsv`. Each row records the column index, global and
-per-stream coordinates, local nucleotide positions, and feature flags so you can
-inspect how loops, beaks, and weak regions are constructed.
+per-stream coordinates, local nucleotide positions, feature flags, and (when
+applicable) the loop size, amplitude, width, displayed arc length, and blooming
+direction. This makes it straightforward to audit how loop glyphs were scaled
+and oriented if you need to refine their presentation.
 
 The script accepts any pairwise alignment FASTA that contains exactly two sequences of equal length (including gap characters) such as MAFFT pairwise outputs.
