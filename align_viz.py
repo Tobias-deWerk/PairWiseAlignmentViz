@@ -18,6 +18,7 @@ from typing import Dict, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patches
+from matplotlib import transforms
 from matplotlib.path import Path as MplPath
 
 
@@ -829,6 +830,30 @@ def plot_alignment(
     circle_edge_color = "#222222"
     circle_face_color = "#ffffff"
 
+    x_min = global_x[0] if len(global_x) > 0 else 0.0
+    x_max = max(global_extent, x_min + 1.0)
+
+    top_candidates: List[float] = [float(np.max(query_positions))] if len(query_positions) else []
+    top_candidates.extend(circle.center_y + circle.radius for circle in query_circles)
+    bottom_candidates: List[float] = [float(np.min(reference_positions))] if len(reference_positions) else []
+    bottom_candidates.extend(circle.center_y - circle.radius for circle in reference_circles)
+
+    y_min = min(bottom_candidates) - 0.2 if bottom_candidates else -0.5
+    y_max = max(top_candidates) + 0.2 if top_candidates else 1.5
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+
+    # Ensure the renderer is ready so coordinate transforms are accurate.
+    fig.canvas.draw()
+
+    x0y0 = ax.transData.transform((0.0, 0.0))
+    x1y0 = ax.transData.transform((1.0, 0.0))
+    x0y1 = ax.transData.transform((0.0, 1.0))
+    px_per_x = x1y0[0] - x0y0[0]
+    px_per_y = x0y1[1] - x0y0[1]
+    y_scale = px_per_x / px_per_y if px_per_y != 0 else 1.0
+
     for circle in query_circles:
         contact_y = circle.center_y - circle.radius
         control_point = (
@@ -852,9 +877,10 @@ def plot_alignment(
                 zorder=4,
             )
         )
-        circle_patch = patches.Circle(
+        circle_patch = patches.Ellipse(
             (circle.center_x, circle.center_y),
-            radius=circle.radius,
+            width=2 * circle.radius,
+            height=2 * circle.radius * y_scale,
             facecolor=circle_face_color,
             edgecolor=circle_edge_color,
             linewidth=1.2,
@@ -895,9 +921,10 @@ def plot_alignment(
                 zorder=4,
             )
         )
-        circle_patch = patches.Circle(
+        circle_patch = patches.Ellipse(
             (circle.center_x, circle.center_y),
-            radius=circle.radius,
+            width=2 * circle.radius,
+            height=2 * circle.radius * y_scale,
             facecolor=circle_face_color,
             edgecolor=circle_edge_color,
             linewidth=1.2,
@@ -914,19 +941,6 @@ def plot_alignment(
             color="#222222",
             zorder=6,
         )
-
-    x_min = global_x[0] if len(global_x) > 0 else 0.0
-    x_max = max(global_extent, x_min + 1.0)
-    ax.set_xlim(x_min, x_max)
-
-    top_candidates: List[float] = [float(np.max(query_positions))] if len(query_positions) else []
-    top_candidates.extend(circle.center_y + circle.radius for circle in query_circles)
-    bottom_candidates: List[float] = [float(np.min(reference_positions))] if len(reference_positions) else []
-    bottom_candidates.extend(circle.center_y - circle.radius for circle in reference_circles)
-
-    y_min = min(bottom_candidates) - 0.2 if bottom_candidates else -0.5
-    y_max = max(top_candidates) + 0.2 if top_candidates else 1.5
-    ax.set_ylim(y_min, y_max)
     ax.axis("off")
 
     fig.savefig(output, bbox_inches="tight")
