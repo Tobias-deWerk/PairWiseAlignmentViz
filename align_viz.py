@@ -169,6 +169,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Multiplier applied to gap amplitudes before clamping to the maximum height",
     )
     parser.add_argument(
+        "--indel-height-scale",
+        type=float,
+        default=0.04,
+        help="Multiplier applied to short indel amplitudes (length < min gap size)",
+    )
+    parser.add_argument(
         "--gap-label-size",
         type=parse_optional_label_size,
         default=8.0,
@@ -461,6 +467,7 @@ def construct_stream_paths(
     gap_column_width: float,
     min_gap_size: int,
     gap_height_scale: float,
+    indel_height_scale: float,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -482,6 +489,7 @@ def construct_stream_paths(
 
     gap_width = max(gap_column_width, 0.0)
     height_scale = max(gap_height_scale, 0.0)
+    indel_scale = max(indel_height_scale, 0.0)
     max_beak_height = max(gap_max_height, 0.0)
     gap_labels: List[GapLabel] = []
 
@@ -503,7 +511,8 @@ def construct_stream_paths(
             start_x = current_global
             length = run.length
             denom = max(length - 1, 1)
-            amplitude = min(max_beak_height, height_scale * length) if length > 0 else 0.0
+            scale = height_scale if is_large_gap else indel_scale
+            amplitude = min(max_beak_height, scale * length) if length > 0 else 0.0
             for offset, pos in enumerate(range(run.start, run.end + 1)):
                 if length == 1:
                     edge_t = 0.5
@@ -901,6 +910,7 @@ def main(argv: Sequence[str]) -> int:
             args.gap_width,
             args.min_gap_size,
             args.gap_height_scale,
+            args.indel_height_scale,
         )
         write_stream_debug_tables(
             args.output,
