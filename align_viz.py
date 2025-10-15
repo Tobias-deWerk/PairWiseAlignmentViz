@@ -18,6 +18,7 @@ from typing import Dict, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 NUCLEOTIDE_COLORS: Dict[str, str] = {
     "A": "#4daf4a",  # green
     "C": "#377eb8",  # blue
@@ -120,6 +121,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=float,
         default=1.2,
         help="Line width used for mismatch ladder rungs",
+    )
+    parser.add_argument(
+        "--gap-max-height",
+        type=float,
+        default=0.8,
+        help="Maximum amplitude (in data units) for gap beak glyphs",
+    )
+    parser.add_argument(
+        "--gap-width",
+        type=float,
+        default=0.0,
+        help="Horizontal width (in nucleotides) assigned to each gap column",
     )
     return parser.parse_args(argv)
 
@@ -368,6 +381,8 @@ def construct_stream_paths(
     weak_regions: Sequence[WeakRegion],
     backbone_gap: float,
     bump_scale: float,
+    gap_max_height: float,
+    gap_column_width: float,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -379,9 +394,14 @@ def construct_stream_paths(
     n = len(data.query)
     global_x = np.zeros(n)
     current_global = 0.0
+    gap_width = max(gap_column_width, 0.0)
     for idx in range(n):
         global_x[idx] = current_global
-        if not data.is_query_gap[idx] and not data.is_reference_gap[idx]:
+        if data.is_query_gap[idx] and data.is_reference_gap[idx]:
+            continue
+        if data.is_query_gap[idx] or data.is_reference_gap[idx]:
+            current_global += gap_width
+        else:
             current_global += 1.0
 
     query_baseline = backbone_gap
@@ -393,7 +413,7 @@ def construct_stream_paths(
 
     gap_height_scale = 0.04
     max_beak_width = 1.2
-    max_beak_height = 0.8
+    max_beak_height = max(gap_max_height, 0.0)
 
     for run in data.gap_runs:
         indices = range(run.start, run.end + 1)
@@ -401,7 +421,6 @@ def construct_stream_paths(
         if length <= 0:
             continue
 
-        base_x = global_x[run.start]
         amplitude = min(max_beak_height, gap_height_scale * length)
         width = min(max_beak_width, 0.4 + 0.1 * length)
         denom = max(length - 1, 1)
@@ -412,6 +431,7 @@ def construct_stream_paths(
                 t = idx / denom if denom > 0 else 0.5
             vertical_shape = 1.0 - abs(2.0 * t - 1.0)
             horizontal_shape = math.sin(math.pi * t)
+            base_x = global_x[pos]
             if run.stream == "reference":
                 query_offsets[pos] = max(
                     query_offsets[pos], amplitude * vertical_shape
@@ -738,6 +758,8 @@ def main(argv: Sequence[str]) -> int:
             data.weak_regions,
             args.backbone_gap,
             args.bump_scale,
+            args.gap_max_height,
+            args.gap_width,
         )
         write_stream_debug_tables(
             args.output,
