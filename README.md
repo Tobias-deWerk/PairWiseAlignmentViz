@@ -23,15 +23,18 @@ Additional tuning parameters can be supplied through optional flags:
 - `--mismatch-line-width`: controls the thickness of mismatch ladder rungs (default: 1.2).
 - `--gap-max-height`: maximum amplitude reached by the gap glyphs (default: 0.8 data units).
 - `--gap-width`: horizontal width assigned to every gap glyph (default: 0.0 nucleotides).
+- `--gap-height-scale`: multiplier applied to gap amplitudes before capping at the maximum height (default: 0.04).
 - `--gap-label-size`: font size for the `+x bp` annotations placed on gap glyphs (default: 8.0; pass `NA` or `NULL` to hide labels).
 
-All gaps are rendered as smooth Bezier arcs that peel away from the backbone
-and rejoin it with a mirrored slope, producing a compact loop shape even for
-large insertions. The maximum height is governed by `--gap-max-height`, while
-`--gap-width` sets the total horizontal span allotted to each gap glyph
-regardless of its length. Set the width to zero to keep every gap anchored to a
-single global coordinate, or increase it to open space for the Bezier curves and
-their optional `+x bp` labels.
+Insertions that meet or exceed `--min-gap-size` are rendered as smooth, fixed-width
+Bezier arcs that peel away from the backbone and rejoin it with a mirrored slope.
+Shorter indels continue to use zero-width bird-beak spikes so they remain crisp and
+compact. The amplitude of either glyph is derived from `--gap-height-scale × length`
+and then clamped to `--gap-max-height`. `--gap-width` controls the horizontal span
+allocated to each large gap, while optional `+x bp` labels (suppressed when the
+label size is `NA`) are jittered slightly along the x-axis to reduce overlap.
+Set the width to zero to keep every gap anchored to a single global coordinate,
+or increase it to open space for the Bezier curves and their annotations.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and

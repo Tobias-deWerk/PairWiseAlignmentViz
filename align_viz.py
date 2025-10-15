@@ -163,6 +163,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Horizontal width (in nucleotides) assigned to each gap column",
     )
     parser.add_argument(
+        "--gap-height-scale",
+        type=float,
+        default=0.04,
+        help="Multiplier applied to gap amplitudes before clamping to the maximum height",
+    )
+    parser.add_argument(
         "--gap-label-size",
         type=parse_optional_label_size,
         default=8.0,
@@ -453,6 +459,8 @@ def construct_stream_paths(
     bump_scale: float,
     gap_max_height: float,
     gap_column_width: float,
+    min_gap_size: int,
+    gap_height_scale: float,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -473,22 +481,29 @@ def construct_stream_paths(
     reference_baseline = 0.0
 
     gap_width = max(gap_column_width, 0.0)
-    gap_height_scale = 0.04
+    height_scale = max(gap_height_scale, 0.0)
     max_beak_height = max(gap_max_height, 0.0)
     gap_labels: List[GapLabel] = []
 
     gap_runs_by_start = {run.start: run for run in data.gap_runs}
+
+    def compute_label_jitter(run: GapRun, span: float) -> float:
+        seed = (run.start << 16) ^ (run.end << 1) ^ (1 if run.stream == "reference" else 0)
+        raw = ((seed * 1103515245 + 12345) & 0x7FFFFFFF) / 0x7FFFFFFF
+        jitter_extent = max(span * 0.35, 0.5)
+        return (raw * 2.0 - 1.0) * jitter_extent
 
     idx = 0
     current_global = 0.0
     while idx < n:
         run = gap_runs_by_start.get(idx)
         if run and run.length > 0:
-            span = gap_width
+            is_large_gap = run.length >= max(min_gap_size, 1)
+            span = gap_width if is_large_gap else 0.0
             start_x = current_global
             length = run.length
             denom = max(length - 1, 1)
-            amplitude = min(max_beak_height, gap_height_scale * length)
+            amplitude = min(max_beak_height, height_scale * length) if length > 0 else 0.0
             for offset, pos in enumerate(range(run.start, run.end + 1)):
                 if length == 1:
                     edge_t = 0.5
@@ -509,8 +524,9 @@ def construct_stream_paths(
                     reference_offsets[pos] = min(
                         reference_offsets[pos], -amplitude * weight
                     )
-            if amplitude > 0:
-                apex_x = start_x + (span * 0.5 if span > 0 else 0.0)
+            if is_large_gap and amplitude > 0:
+                base_x = start_x + (span * 0.5 if span > 0 else 0.0)
+                apex_x = base_x + compute_label_jitter(run, span)
                 if run.stream == "reference":
                     apex_y = query_baseline + amplitude
                     direction = 1
@@ -883,6 +899,8 @@ def main(argv: Sequence[str]) -> int:
             args.bump_scale,
             args.gap_max_height,
             args.gap_width,
+            args.min_gap_size,
+            args.gap_height_scale,
         )
         write_stream_debug_tables(
             args.output,
