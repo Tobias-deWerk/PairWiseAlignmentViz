@@ -21,16 +21,17 @@ Additional tuning parameters can be supplied through optional flags:
 - `--backbone-thickness`: line width used for the backbone paths (default: 2.0).
 - `--bump-scale`: multiplier applied to weak-alignment bump heights (default: 1.0).
 - `--mismatch-line-width`: controls the thickness of mismatch ladder rungs (default: 1.2).
-- `--gap-max-height`: maximum amplitude reached by gap beak glyphs (default: 0.8 data units).
-- `--gap-width`: horizontal width assigned to each gap column on the global axis (default: 0.0 nucleotides).
+- `--gap-max-height`: maximum amplitude reached by the gap glyphs (default: 0.8 data units).
+- `--gap-width`: horizontal width assigned to every gap glyph (default: 0.0 nucleotides).
+- `--gap-label-size`: font size for the `+x bp` annotations placed on gap glyphs (default: 8.0; pass `NA` or `NULL` to hide labels).
 
-All gaps are rendered as tapered beaks that originate at the backbone and arc
-outward before rejoining the baseline. The glyph width and height scale with the
-gap length up to a capped maximum (customizable through `--gap-max-height`) so
-extremely long insertions remain legible without overwhelming nearby features.
-If you would like the global axis to reflect gap length directly, set
-`--gap-width` to a positive value to allocate horizontal space for each gap
-column.
+All gaps are rendered as smooth Bezier arcs that peel away from the backbone
+and rejoin it with a mirrored slope, producing a compact loop shape even for
+large insertions. The maximum height is governed by `--gap-max-height`, while
+`--gap-width` sets the total horizontal span allotted to each gap glyph
+regardless of its length. Set the width to zero to keep every gap anchored to a
+single global coordinate, or increase it to open space for the Bezier curves and
+their optional `+x bp` labels.
 
 For troubleshooting, the tool also emits two TSV files alongside the requested
 visualization output: `<output>_query_stream.tsv` and

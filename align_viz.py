@@ -13,7 +13,7 @@ import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,6 +26,23 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
     "T": "#e41a1c",  # red
     "U": "#e41a1c",  # treat U like T
 }
+
+
+def parse_optional_label_size(value: str) -> Optional[float]:
+    normalized = value.strip().lower()
+    if normalized in {"na", "null"}:
+        return None
+    try:
+        parsed = float(value)
+    except ValueError as exc:  # pragma: no cover - argparse error propagation
+        raise argparse.ArgumentTypeError(
+            "gap label size must be a floating-point value or 'NA'/'NULL'"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("gap label size must be positive")
+    return parsed
+
+
 @dataclass
 class GapRun:
     start: int
@@ -42,9 +59,20 @@ class WeakRegion:
 
 
 @dataclass
+class GapLabel:
+    x: float
+    y: float
+    direction: int  # +1 for upward labels, -1 for downward
+    length: int
+    amplitude: float
+
+
+@dataclass
 class AlignmentData:
     query: str
     reference: str
+    query_name: str
+    reference_name: str
     matches: List[bool]
     is_query_gap: List[bool]
     is_reference_gap: List[bool]
@@ -134,40 +162,79 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=0.0,
         help="Horizontal width (in nucleotides) assigned to each gap column",
     )
+    parser.add_argument(
+        "--gap-label-size",
+        type=parse_optional_label_size,
+        default=8.0,
+        help=(
+            "Font size used for '+x bp' gap labels; set to NA or NULL to disable label rendering"
+        ),
+    )
     return parser.parse_args(argv)
 
 
-def parse_fasta_pair(path: Path) -> Tuple[str, str]:
-    sequences: List[List[str]] = []
-    current_seq: List[str] | None = None
+def parse_fasta_pair(path: Path) -> Tuple[str, str, str, str]:
+    records: List[Tuple[str, List[str]]] = []
+    current_header: str | None = None
+    current_chunks: List[str] = []
 
     with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
+        for raw_line in handle:
+            line = raw_line.strip()
             if not line:
                 continue
             if line.startswith(">"):
-                current_seq = []
-                sequences.append(current_seq)
+                if current_header is not None:
+                    records.append((current_header, current_chunks))
+                current_header = line[1:].strip()
+                current_chunks = []
             else:
-                if current_seq is None:
+                if current_header is None:
                     raise ValueError("FASTA file must start with a header line beginning with '>'")
-                current_seq.append(line.strip())
+                current_chunks.append(line)
 
-    if len(sequences) != 2:
+    if current_header is not None:
+        records.append((current_header, current_chunks))
+
+    if len(records) != 2:
         raise ValueError(
-            f"Expected exactly two sequences in the FASTA file, found {len(sequences)}"
+            f"Expected exactly two sequences in the FASTA file, found {len(records)}"
         )
 
-    query = "".join(sequences[1]).upper()
-    reference = "".join(sequences[0]).upper()
+    (header1, chunks1), (header2, chunks2) = records
+    seq1 = "".join(chunks1).upper()
+    seq2 = "".join(chunks2).upper()
 
-    if len(query) != len(reference):
+    if len(seq1) != len(seq2):
         raise ValueError(
             "Aligned sequences must have the same length (including gap characters)."
         )
 
-    return query, reference
+    def is_reference(name: str) -> bool:
+        lowered = name.lower()
+        return "reference" in lowered or "ref" in lowered
+
+    def is_query(name: str) -> bool:
+        lowered = name.lower()
+        return "query" in lowered
+
+    if is_reference(header1) and not is_reference(header2):
+        reference_seq, reference_name = seq1, header1
+        query_seq, query_name = seq2, header2
+    elif is_reference(header2) and not is_reference(header1):
+        reference_seq, reference_name = seq2, header2
+        query_seq, query_name = seq1, header1
+    elif is_query(header1) and not is_query(header2):
+        query_seq, query_name = seq1, header1
+        reference_seq, reference_name = seq2, header2
+    elif is_query(header2) and not is_query(header1):
+        query_seq, query_name = seq2, header2
+        reference_seq, reference_name = seq1, header1
+    else:
+        reference_seq, reference_name = seq1, header1
+        query_seq, query_name = seq2, header2
+
+    return query_seq, reference_seq, query_name, reference_name
 
 
 def identify_gap_runs(query: str, reference: str) -> List[GapRun]:
@@ -194,6 +261,8 @@ def identify_gap_runs(query: str, reference: str) -> List[GapRun]:
 def compute_alignment_data(
     query: str,
     reference: str,
+    query_name: str,
+    reference_name: str,
     min_gap_size: int,
     block_size: int,
     min_sequence_identity: float,
@@ -240,6 +309,8 @@ def compute_alignment_data(
     return AlignmentData(
         query=query,
         reference=reference,
+        query_name=query_name,
+        reference_name=reference_name,
         matches=matches,
         is_query_gap=is_query_gap,
         is_reference_gap=is_reference_gap,
@@ -377,7 +448,6 @@ def nucleotide_color(base: str) -> str:
 
 def construct_stream_paths(
     data: AlignmentData,
-    min_gap_size: int,
     weak_regions: Sequence[WeakRegion],
     backbone_gap: float,
     bump_scale: float,
@@ -390,58 +460,82 @@ def construct_stream_paths(
     np.ndarray,
     np.ndarray,
     float,
+    List[GapLabel],
 ]:
     n = len(data.query)
     global_x = np.zeros(n)
-    current_global = 0.0
-    gap_width = max(gap_column_width, 0.0)
-    for idx in range(n):
-        global_x[idx] = current_global
-        if data.is_query_gap[idx] and data.is_reference_gap[idx]:
-            continue
-        if data.is_query_gap[idx] or data.is_reference_gap[idx]:
-            current_global += gap_width
-        else:
-            current_global += 1.0
+    query_x = np.zeros(n)
+    reference_x = np.zeros(n)
+    query_offsets = np.zeros(n)
+    reference_offsets = np.zeros(n)
 
     query_baseline = backbone_gap
     reference_baseline = 0.0
-    query_offsets = np.zeros(n)
-    reference_offsets = np.zeros(n)
-    query_x = global_x.copy()
-    reference_x = global_x.copy()
 
+    gap_width = max(gap_column_width, 0.0)
     gap_height_scale = 0.04
-    max_beak_width = 1.2
     max_beak_height = max(gap_max_height, 0.0)
+    gap_labels: List[GapLabel] = []
 
-    for run in data.gap_runs:
-        indices = range(run.start, run.end + 1)
-        length = run.length
-        if length <= 0:
+    gap_runs_by_start = {run.start: run for run in data.gap_runs}
+
+    idx = 0
+    current_global = 0.0
+    while idx < n:
+        run = gap_runs_by_start.get(idx)
+        if run and run.length > 0:
+            span = gap_width
+            start_x = current_global
+            length = run.length
+            denom = max(length - 1, 1)
+            amplitude = min(max_beak_height, gap_height_scale * length)
+            for offset, pos in enumerate(range(run.start, run.end + 1)):
+                if length == 1:
+                    edge_t = 0.5
+                    midpoint_t = 0.5
+                else:
+                    edge_t = offset / denom
+                    midpoint_t = (offset + 0.5) / length
+                weight = 4.0 * midpoint_t * (1.0 - midpoint_t)
+                if length > 1 and (offset == 0 or offset == length - 1):
+                    weight = 0.0
+                x_value = start_x + span * edge_t if span > 0 else start_x
+                global_x[pos] = x_value
+                query_x[pos] = x_value
+                reference_x[pos] = x_value
+                if run.stream == "reference":
+                    query_offsets[pos] = max(query_offsets[pos], amplitude * weight)
+                else:
+                    reference_offsets[pos] = min(
+                        reference_offsets[pos], -amplitude * weight
+                    )
+            if amplitude > 0:
+                apex_x = start_x + (span * 0.5 if span > 0 else 0.0)
+                if run.stream == "reference":
+                    apex_y = query_baseline + amplitude
+                    direction = 1
+                else:
+                    apex_y = reference_baseline - amplitude
+                    direction = -1
+                gap_labels.append(
+                    GapLabel(
+                        x=apex_x,
+                        y=apex_y,
+                        direction=direction,
+                        length=run.length,
+                        amplitude=amplitude,
+                    )
+                )
+            current_global = start_x + span
+            idx = run.end + 1
             continue
 
-        amplitude = min(max_beak_height, gap_height_scale * length)
-        width = min(max_beak_width, 0.4 + 0.1 * length)
-        denom = max(length - 1, 1)
-        for idx, pos in enumerate(indices):
-            if length == 1:
-                t = 0.5
-            else:
-                t = idx / denom if denom > 0 else 0.5
-            vertical_shape = 1.0 - abs(2.0 * t - 1.0)
-            horizontal_shape = math.sin(math.pi * t)
-            base_x = global_x[pos]
-            if run.stream == "reference":
-                query_offsets[pos] = max(
-                    query_offsets[pos], amplitude * vertical_shape
-                )
-                query_x[pos] = base_x + width * horizontal_shape
-            else:
-                reference_offsets[pos] = min(
-                    reference_offsets[pos], -amplitude * vertical_shape
-                )
-                reference_x[pos] = base_x + width * horizontal_shape
+        x_value = current_global
+        global_x[idx] = x_value
+        query_x[idx] = x_value
+        reference_x[idx] = x_value
+        current_global += 1.0
+        idx += 1
 
     for region in weak_regions:
         length = region.end - region.start + 1
@@ -460,13 +554,20 @@ def construct_stream_paths(
     query_positions = query_baseline + query_offsets
     reference_positions = reference_baseline + reference_offsets
 
+    if n:
+        last_x = float(global_x[-1])
+        global_extent = max(current_global, last_x + 1.0)
+    else:
+        global_extent = 0.0
+
     return (
         global_x,
         query_x,
         reference_x,
         query_positions,
         reference_positions,
-        current_global,
+        global_extent,
+        gap_labels,
     )
 
 
@@ -596,6 +697,7 @@ def plot_alignment(
     query_positions: np.ndarray,
     reference_positions: np.ndarray,
     global_extent: float,
+    gap_labels: Sequence[GapLabel],
     width: float,
     height: float,
     dpi: int,
@@ -603,6 +705,7 @@ def plot_alignment(
     tick_interval: int,
     backbone_thickness: float,
     mismatch_line_width: float,
+    gap_label_size: Optional[float],
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -612,7 +715,7 @@ def plot_alignment(
         query_positions,
         color="#222222",
         linewidth=line_width if line_width > 0 else 0.0,
-        label="Query",
+        label=data.query_name or "Query",
         zorder=5,
     )
     ax.plot(
@@ -620,7 +723,7 @@ def plot_alignment(
         reference_positions,
         color="#222222",
         linewidth=line_width if line_width > 0 else 0.0,
-        label="Reference",
+        label=data.reference_name or "Reference",
         zorder=5,
     )
 
@@ -702,6 +805,24 @@ def plot_alignment(
                 zorder=3,
             )
 
+    if gap_label_size is not None:
+        label_offset_base = 0.12
+        for label in gap_labels:
+            text = f"+{label.length:,} bp"
+            offset = label_offset_base + 0.05 * label.amplitude
+            text_y = label.y + label.direction * offset
+            vertical_alignment = "bottom" if label.direction > 0 else "top"
+            ax.text(
+                label.x,
+                text_y,
+                text,
+                fontsize=gap_label_size,
+                ha="center",
+                va=vertical_alignment,
+                color="#222222",
+                zorder=6,
+            )
+
     x_min = global_x[0] if len(global_x) > 0 else 0.0
     x_max = max(global_extent, x_min + 1.0)
 
@@ -731,7 +852,7 @@ def plot_alignment(
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     try:
-        query, reference = parse_fasta_pair(args.input)
+        query, reference, query_name, reference_name = parse_fasta_pair(args.input)
     except Exception as exc:  # pragma: no cover - user input validation
         print(f"Error while parsing FASTA file: {exc}", file=sys.stderr)
         return 1
@@ -740,6 +861,8 @@ def main(argv: Sequence[str]) -> int:
         data = compute_alignment_data(
             query,
             reference,
+            query_name,
+            reference_name,
             args.min_gap_size,
             args.block_size,
             args.min_sequence_identity,
@@ -752,9 +875,9 @@ def main(argv: Sequence[str]) -> int:
             query_positions,
             reference_positions,
             global_extent,
+            gap_labels,
         ) = construct_stream_paths(
             data,
-            args.min_gap_size,
             data.weak_regions,
             args.backbone_gap,
             args.bump_scale,
@@ -778,6 +901,7 @@ def main(argv: Sequence[str]) -> int:
             query_positions,
             reference_positions,
             global_extent,
+            gap_labels,
             args.width,
             args.height,
             args.dpi,
@@ -785,6 +909,7 @@ def main(argv: Sequence[str]) -> int:
             args.tick_interval,
             args.backbone_thickness,
             args.mismatch_line_width,
+            args.gap_label_size,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)
