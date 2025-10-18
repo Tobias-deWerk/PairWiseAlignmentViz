@@ -11,12 +11,13 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 
 
 NUCLEOTIDE_COLORS: Dict[str, str] = {
@@ -28,7 +29,14 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
 }
 
 
-def parse_optional_label_size(value: str) -> Optional[float]:
+ANNOTATION_THICKNESS = 4.0
+ANNOTATION_ALPHA = 0.85
+REF_ANNOTATION_COLOR = "#984ea3"
+QUERY_ANNOTATION_COLOR = "#ff7f00"
+ANNOTATION_LABEL_OFFSET = 0.18
+
+
+def parse_optional_positive_float(value: str) -> Optional[float]:
     normalized = value.strip().lower()
     if normalized in {"na", "null"}:
         return None
@@ -36,10 +44,10 @@ def parse_optional_label_size(value: str) -> Optional[float]:
         parsed = float(value)
     except ValueError as exc:  # pragma: no cover - argparse error propagation
         raise argparse.ArgumentTypeError(
-            "gap label size must be a floating-point value or 'NA'/'NULL'"
+            "value must be a floating-point number or 'NA'/'NULL'"
         ) from exc
     if parsed <= 0:
-        raise argparse.ArgumentTypeError("gap label size must be positive")
+        raise argparse.ArgumentTypeError("value must be positive")
     return parsed
 
 
@@ -81,6 +89,23 @@ class AlignmentData:
     is_weak: List[bool]
     gap_runs: List[GapRun]
     weak_regions: List[WeakRegion]
+
+
+@dataclass
+class GeneFeature:
+    name: str
+    start: int
+    end: int
+    kind: str
+
+
+@dataclass
+class GeneAnnotation:
+    gene_id: str
+    start: int
+    end: int
+    direction: str
+    features: List[GeneFeature] = field(default_factory=list)
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -176,10 +201,28 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--gap-label-size",
-        type=parse_optional_label_size,
+        type=parse_optional_positive_float,
         default=8.0,
         help=(
             "Font size used for '+x bp' gap labels; set to NA or NULL to disable label rendering"
+        ),
+    )
+    parser.add_argument(
+        "--query-annotation",
+        type=Path,
+        help="Path to a query stream gene annotation file",
+    )
+    parser.add_argument(
+        "--reference-annotation",
+        type=Path,
+        help="Path to a reference stream gene annotation file",
+    )
+    parser.add_argument(
+        "--annotation-label-size",
+        type=parse_optional_positive_float,
+        default=10.0,
+        help=(
+            "Font size for gene annotation labels; set to NA or NULL to hide the labels"
         ),
     )
     return parser.parse_args(argv)
@@ -247,6 +290,160 @@ def parse_fasta_pair(path: Path) -> Tuple[str, str, str, str]:
         query_seq, query_name = seq2, header2
 
     return query_seq, reference_seq, query_name, reference_name
+
+
+def normalize_feature_kind(name: str) -> str:
+    lowered = name.strip().lower()
+    if lowered == "exon":
+        return "exon"
+    if lowered == "utr":
+        return "utr"
+    return lowered or name
+
+
+def finalize_gene_annotation(
+    gene_id: str,
+    start: int,
+    end: int,
+    direction: str,
+    features: List[GeneFeature],
+) -> GeneAnnotation:
+    if start > end:
+        raise ValueError(f"Gene '{gene_id}' has start greater than end")
+    direction_symbol = direction.strip()
+    if direction_symbol not in {"<", ">"}:
+        raise ValueError(
+            f"Gene '{gene_id}' must specify direction '<' or '>', found '{direction}'"
+        )
+
+    sorted_features = sorted(features, key=lambda feature: (feature.start, feature.end))
+    merged: List[GeneFeature] = []
+    current = start - 1
+    for feature in sorted_features:
+        if feature.start > feature.end:
+            raise ValueError(
+                f"Feature '{feature.name}' in gene '{gene_id}' has start greater than end"
+            )
+        if feature.start < start or feature.end > end:
+            raise ValueError(
+                f"Feature '{feature.name}' in gene '{gene_id}' falls outside the gene bounds"
+            )
+        if feature.start <= current:
+            raise ValueError(
+                f"Features in gene '{gene_id}' overlap or are unsorted around position {feature.start}"
+            )
+        if feature.start > current + 1:
+            merged.append(
+                GeneFeature(
+                    name="intron",
+                    start=current + 1,
+                    end=feature.start - 1,
+                    kind="intron",
+                )
+            )
+        merged.append(feature)
+        current = feature.end
+
+    if current < end:
+        merged.append(
+            GeneFeature(name="intron", start=current + 1, end=end, kind="intron")
+        )
+
+    return GeneAnnotation(
+        gene_id=gene_id,
+        start=start,
+        end=end,
+        direction=direction_symbol,
+        features=merged,
+    )
+
+
+def parse_annotation_file(path: Path) -> List[GeneAnnotation]:
+    annotations: List[GeneAnnotation] = []
+    if path is None:
+        return annotations
+
+    if not path.exists():
+        raise FileNotFoundError(f"Annotation file '{path}' was not found")
+
+    current_gene_id: Optional[str] = None
+    current_start: Optional[int] = None
+    current_end: Optional[int] = None
+    current_direction: Optional[str] = None
+    current_features: List[GeneFeature] = []
+
+    def flush_current() -> None:
+        nonlocal current_gene_id, current_start, current_end, current_direction, current_features
+        if current_gene_id is None:
+            return
+        if current_start is None or current_end is None or current_direction is None:
+            raise ValueError(
+                f"Gene '{current_gene_id}' is missing coordinate or direction information"
+            )
+        annotations.append(
+            finalize_gene_annotation(
+                current_gene_id,
+                current_start,
+                current_end,
+                current_direction,
+                current_features,
+            )
+        )
+        current_gene_id = None
+        current_start = None
+        current_end = None
+        current_direction = None
+        current_features = []
+
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                flush_current()
+                continue
+            parts = line.split()
+            if current_gene_id is None:
+                if len(parts) != 4:
+                    raise ValueError(
+                        f"Gene header lines must have four columns, found: '{line}'"
+                    )
+                gene_id, start_text, end_text, direction = parts
+                try:
+                    start_val = int(start_text)
+                    end_val = int(end_text)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Gene '{gene_id}' has non-integer bounds ('{start_text}', '{end_text}')"
+                    ) from exc
+                current_gene_id = gene_id
+                current_start = start_val
+                current_end = end_val
+                current_direction = direction
+                current_features = []
+            else:
+                if len(parts) != 3:
+                    raise ValueError(
+                        f"Feature rows must have three columns, found: '{line}'"
+                    )
+                feature_name, start_text, end_text = parts
+                try:
+                    feature_start = int(start_text)
+                    feature_end = int(end_text)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Feature '{feature_name}' in gene '{current_gene_id}' has non-integer bounds"
+                    ) from exc
+                current_features.append(
+                    GeneFeature(
+                        name=feature_name,
+                        start=feature_start,
+                        end=feature_end,
+                        kind=normalize_feature_kind(feature_name),
+                    )
+                )
+
+    flush_current()
+    return annotations
 
 
 def identify_gap_runs(query: str, reference: str) -> List[GapRun]:
@@ -714,6 +911,103 @@ def write_stream_debug_tables(
             )
 
 
+def build_local_index_map(
+    local_positions: Sequence[int], is_gap: Sequence[bool]
+) -> Dict[int, List[int]]:
+    mapping: Dict[int, List[int]] = {}
+    for idx, (local, gap) in enumerate(zip(local_positions, is_gap)):
+        if gap:
+            continue
+        mapping.setdefault(local, []).append(idx)
+    return mapping
+
+
+def collect_indices_for_range(
+    mapping: Dict[int, List[int]], start: int, end: int
+) -> List[int]:
+    if start > end:
+        return []
+    collected: List[int] = []
+    for value in range(start, end + 1):
+        collected.extend(mapping.get(value, []))
+    return sorted(set(collected))
+
+
+def split_indices_into_runs(indices: Sequence[int]) -> List[List[int]]:
+    if not indices:
+        return []
+    runs: List[List[int]] = []
+    current_run: List[int] = [indices[0]]
+    for idx in indices[1:]:
+        if idx == current_run[-1] + 1:
+            current_run.append(idx)
+        else:
+            runs.append(current_run)
+            current_run = [idx]
+    runs.append(current_run)
+    return runs
+
+
+def indices_to_segment(
+    run: Sequence[int], stream_x: np.ndarray, stream_y: np.ndarray
+) -> Optional[np.ndarray]:
+    if not run:
+        return None
+    if len(run) == 1:
+        idx = run[0]
+        x_pos = float(stream_x[idx])
+        y_pos = float(stream_y[idx])
+        epsilon = 0.35
+        return np.array([[x_pos - epsilon, y_pos], [x_pos + epsilon, y_pos]])
+    x_values = stream_x[list(run)]
+    y_values = stream_y[list(run)]
+    return np.column_stack((x_values, y_values))
+
+
+def format_gene_label(annotation: GeneAnnotation) -> str:
+    if annotation.direction == "<":
+        return f"< {annotation.gene_id}"
+    return f"{annotation.gene_id} >"
+
+
+def prepare_annotation_drawables(
+    annotations: Sequence[GeneAnnotation],
+    local_positions: Sequence[int],
+    is_gap: Sequence[bool],
+    stream_x: np.ndarray,
+    stream_y: np.ndarray,
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[Tuple[float, float, str]]]:
+    coding_segments: List[np.ndarray] = []
+    noncoding_segments: List[np.ndarray] = []
+    labels: List[Tuple[float, float, str]] = []
+
+    index_map = build_local_index_map(local_positions, is_gap)
+
+    for annotation in annotations:
+        gene_indices = collect_indices_for_range(index_map, annotation.start, annotation.end)
+        if gene_indices:
+            mid_index = gene_indices[len(gene_indices) // 2]
+            labels.append(
+                (
+                    float(stream_x[mid_index]),
+                    float(stream_y[mid_index]),
+                    format_gene_label(annotation),
+                )
+            )
+        for feature in annotation.features:
+            feature_indices = collect_indices_for_range(index_map, feature.start, feature.end)
+            for run in split_indices_into_runs(feature_indices):
+                segment = indices_to_segment(run, stream_x, stream_y)
+                if segment is None:
+                    continue
+                if feature.kind == "exon":
+                    coding_segments.append(segment)
+                else:
+                    noncoding_segments.append(segment)
+
+    return coding_segments, noncoding_segments, labels
+
+
 def plot_alignment(
     data: AlignmentData,
     global_x: np.ndarray,
@@ -731,6 +1025,9 @@ def plot_alignment(
     backbone_thickness: float,
     mismatch_line_width: float,
     gap_label_size: Optional[float],
+    query_annotations: Sequence[GeneAnnotation],
+    reference_annotations: Sequence[GeneAnnotation],
+    annotation_label_size: Optional[float],
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -750,6 +1047,59 @@ def plot_alignment(
         linewidth=line_width if line_width > 0 else 0.0,
         label=data.reference_name or "Reference",
         zorder=5,
+    )
+
+    (
+        query_coding_segments,
+        query_noncoding_segments,
+        query_label_info,
+    ) = prepare_annotation_drawables(
+        query_annotations,
+        data.query_local_positions,
+        data.is_query_gap,
+        query_x,
+        query_positions,
+    )
+    (
+        reference_coding_segments,
+        reference_noncoding_segments,
+        reference_label_info,
+    ) = prepare_annotation_drawables(
+        reference_annotations,
+        data.reference_local_positions,
+        data.is_reference_gap,
+        reference_x,
+        reference_positions,
+    )
+
+    def add_annotation_segments(
+        segments: Sequence[np.ndarray], color: str, width: float
+    ) -> None:
+        if not segments:
+            return
+        effective_width = max(width, 0.0)
+        if effective_width <= 0:
+            return
+        collection = LineCollection(
+            segments,
+            colors=[color],
+            linewidths=effective_width,
+            alpha=ANNOTATION_ALPHA,
+            zorder=6,
+        )
+        ax.add_collection(collection)
+
+    add_annotation_segments(
+        query_coding_segments, QUERY_ANNOTATION_COLOR, ANNOTATION_THICKNESS
+    )
+    add_annotation_segments(
+        query_noncoding_segments, QUERY_ANNOTATION_COLOR, backbone_thickness
+    )
+    add_annotation_segments(
+        reference_coding_segments, REF_ANNOTATION_COLOR, ANNOTATION_THICKNESS
+    )
+    add_annotation_segments(
+        reference_noncoding_segments, REF_ANNOTATION_COLOR, backbone_thickness
     )
 
     tick_length = 0.06
@@ -848,6 +1198,27 @@ def plot_alignment(
                 zorder=6,
             )
 
+    if annotation_label_size is not None:
+        def draw_labels(
+            entries: Sequence[Tuple[float, float, str]],
+            vertical_direction: int,
+            color: str,
+        ) -> None:
+            for x_pos, y_pos, text in entries:
+                ax.text(
+                    x_pos,
+                    y_pos + vertical_direction * ANNOTATION_LABEL_OFFSET,
+                    text,
+                    fontsize=annotation_label_size,
+                    ha="center",
+                    va="bottom" if vertical_direction > 0 else "top",
+                    color=color,
+                    zorder=7,
+                )
+
+        draw_labels(query_label_info, 1, QUERY_ANNOTATION_COLOR)
+        draw_labels(reference_label_info, -1, REF_ANNOTATION_COLOR)
+
     x_min = global_x[0] if len(global_x) > 0 else 0.0
     x_max = max(global_extent, x_min + 1.0)
 
@@ -880,6 +1251,18 @@ def main(argv: Sequence[str]) -> int:
         query, reference, query_name, reference_name = parse_fasta_pair(args.input)
     except Exception as exc:  # pragma: no cover - user input validation
         print(f"Error while parsing FASTA file: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        query_annotations = parse_annotation_file(args.query_annotation)
+    except Exception as exc:  # pragma: no cover - user input validation
+        print(f"Error while parsing query annotations: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        reference_annotations = parse_annotation_file(args.reference_annotation)
+    except Exception as exc:  # pragma: no cover - user input validation
+        print(f"Error while parsing reference annotations: {exc}", file=sys.stderr)
         return 1
 
     try:
@@ -938,6 +1321,9 @@ def main(argv: Sequence[str]) -> int:
             args.backbone_thickness,
             args.mismatch_line_width,
             args.gap_label_size,
+            query_annotations,
+            reference_annotations,
+            args.annotation_label_size,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)
