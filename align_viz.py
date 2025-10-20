@@ -9,6 +9,7 @@ regions, and mismatch ladder rungs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
 import sys
 from dataclasses import dataclass, field
@@ -29,11 +30,12 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
 }
 
 
-ANNOTATION_THICKNESS = 4.0
-ANNOTATION_ALPHA = 0.85
-REF_ANNOTATION_COLOR = "#984ea3"
-QUERY_ANNOTATION_COLOR = "#ff7f00"
+DEFAULT_ANNOTATION_THICKNESS = 4.0
+DEFAULT_ANNOTATION_ALPHA = 0.85
+DEFAULT_REF_ANNOTATION_COLOR = "#984ea3"
+DEFAULT_QUERY_ANNOTATION_COLOR = "#ff7f00"
 ANNOTATION_LABEL_OFFSET = 0.18
+DEFAULT_ANNOTATION_LABEL_JITTER = 0.35
 
 
 def parse_optional_positive_float(value: str) -> Optional[float]:
@@ -48,6 +50,26 @@ def parse_optional_positive_float(value: str) -> Optional[float]:
         ) from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def parse_nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:  # pragma: no cover - argparse error propagation
+        raise argparse.ArgumentTypeError("value must be a floating-point number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
+    return parsed
+
+
+def parse_alpha(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:  # pragma: no cover - argparse error propagation
+        raise argparse.ArgumentTypeError("value must be a floating-point number") from exc
+    if not (0.0 <= parsed <= 1.0):
+        raise argparse.ArgumentTypeError("alpha must fall between 0 and 1")
     return parsed
 
 
@@ -106,6 +128,13 @@ class GeneAnnotation:
     end: int
     direction: str
     features: List[GeneFeature] = field(default_factory=list)
+
+
+@dataclass
+class GeneLabelInfo:
+    x: float
+    y: float
+    annotation: GeneAnnotation
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -225,6 +254,34 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
             "Font size for gene annotation labels; set to NA or NULL to hide the labels"
         ),
     )
+    parser.add_argument(
+        "--annotation-thickness",
+        type=parse_nonnegative_float,
+        default=DEFAULT_ANNOTATION_THICKNESS,
+        help="Line width used for coding segments in gene annotations",
+    )
+    parser.add_argument(
+        "--annotation-alpha",
+        type=parse_alpha,
+        default=DEFAULT_ANNOTATION_ALPHA,
+        help="Alpha transparency applied to annotation overlays (0-1)",
+    )
+    parser.add_argument(
+        "--reference-annotation-color",
+        default=DEFAULT_REF_ANNOTATION_COLOR,
+        help="Stroke color used for reference annotations (any Matplotlib color)",
+    )
+    parser.add_argument(
+        "--query-annotation-color",
+        default=DEFAULT_QUERY_ANNOTATION_COLOR,
+        help="Stroke color used for query annotations (any Matplotlib color)",
+    )
+    parser.add_argument(
+        "--annotation-label-jitter",
+        type=parse_nonnegative_float,
+        default=DEFAULT_ANNOTATION_LABEL_JITTER,
+        help="Horizontal jitter amplitude for annotation labels (set to 0 to disable)",
+    )
     return parser.parse_args(argv)
 
 
@@ -286,8 +343,8 @@ def parse_fasta_pair(path: Path) -> Tuple[str, str, str, str]:
         query_seq, query_name = seq2, header2
         reference_seq, reference_name = seq1, header1
     else:
-        reference_seq, reference_name = seq1, header1
-        query_seq, query_name = seq2, header2
+        query_seq, query_name = seq1, header1
+        reference_seq, reference_name = seq2, header2
 
     return query_seq, reference_seq, query_name, reference_name
 
@@ -970,16 +1027,27 @@ def format_gene_label(annotation: GeneAnnotation) -> str:
     return f"{annotation.gene_id} >"
 
 
+def compute_annotation_label_jitter(
+    annotation: GeneAnnotation, amplitude: float
+) -> float:
+    if amplitude <= 0:
+        return 0.0
+    key = f"{annotation.gene_id}|{annotation.start}|{annotation.end}|{annotation.direction}"
+    digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+    value = int.from_bytes(digest, "big") / float(1 << 64)
+    return (value * 2.0 - 1.0) * amplitude
+
+
 def prepare_annotation_drawables(
     annotations: Sequence[GeneAnnotation],
     local_positions: Sequence[int],
     is_gap: Sequence[bool],
     stream_x: np.ndarray,
     stream_y: np.ndarray,
-) -> Tuple[List[np.ndarray], List[np.ndarray], List[Tuple[float, float, str]]]:
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[GeneLabelInfo]]:
     coding_segments: List[np.ndarray] = []
     noncoding_segments: List[np.ndarray] = []
-    labels: List[Tuple[float, float, str]] = []
+    labels: List[GeneLabelInfo] = []
 
     index_map = build_local_index_map(local_positions, is_gap)
 
@@ -988,10 +1056,10 @@ def prepare_annotation_drawables(
         if gene_indices:
             mid_index = gene_indices[len(gene_indices) // 2]
             labels.append(
-                (
-                    float(stream_x[mid_index]),
-                    float(stream_y[mid_index]),
-                    format_gene_label(annotation),
+                GeneLabelInfo(
+                    x=float(stream_x[mid_index]),
+                    y=float(stream_y[mid_index]),
+                    annotation=annotation,
                 )
             )
         for feature in annotation.features:
@@ -1028,6 +1096,11 @@ def plot_alignment(
     query_annotations: Sequence[GeneAnnotation],
     reference_annotations: Sequence[GeneAnnotation],
     annotation_label_size: Optional[float],
+    annotation_thickness: float,
+    annotation_alpha: float,
+    reference_annotation_color: str,
+    query_annotation_color: str,
+    annotation_label_jitter: float,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -1084,22 +1157,22 @@ def plot_alignment(
             segments,
             colors=[color],
             linewidths=effective_width,
-            alpha=ANNOTATION_ALPHA,
+            alpha=annotation_alpha,
             zorder=6,
         )
         ax.add_collection(collection)
 
     add_annotation_segments(
-        query_coding_segments, QUERY_ANNOTATION_COLOR, ANNOTATION_THICKNESS
+        query_coding_segments, query_annotation_color, annotation_thickness
     )
     add_annotation_segments(
-        query_noncoding_segments, QUERY_ANNOTATION_COLOR, backbone_thickness
+        query_noncoding_segments, query_annotation_color, backbone_thickness
     )
     add_annotation_segments(
-        reference_coding_segments, REF_ANNOTATION_COLOR, ANNOTATION_THICKNESS
+        reference_coding_segments, reference_annotation_color, annotation_thickness
     )
     add_annotation_segments(
-        reference_noncoding_segments, REF_ANNOTATION_COLOR, backbone_thickness
+        reference_noncoding_segments, reference_annotation_color, backbone_thickness
     )
 
     tick_length = 0.06
@@ -1200,15 +1273,18 @@ def plot_alignment(
 
     if annotation_label_size is not None:
         def draw_labels(
-            entries: Sequence[Tuple[float, float, str]],
+            entries: Sequence[GeneLabelInfo],
             vertical_direction: int,
             color: str,
         ) -> None:
-            for x_pos, y_pos, text in entries:
+            for info in entries:
+                jitter = compute_annotation_label_jitter(
+                    info.annotation, annotation_label_jitter
+                )
                 ax.text(
-                    x_pos,
-                    y_pos + vertical_direction * ANNOTATION_LABEL_OFFSET,
-                    text,
+                    info.x + jitter,
+                    info.y + vertical_direction * ANNOTATION_LABEL_OFFSET,
+                    format_gene_label(info.annotation),
                     fontsize=annotation_label_size,
                     ha="center",
                     va="bottom" if vertical_direction > 0 else "top",
@@ -1216,8 +1292,8 @@ def plot_alignment(
                     zorder=7,
                 )
 
-        draw_labels(query_label_info, 1, QUERY_ANNOTATION_COLOR)
-        draw_labels(reference_label_info, -1, REF_ANNOTATION_COLOR)
+        draw_labels(query_label_info, 1, query_annotation_color)
+        draw_labels(reference_label_info, -1, reference_annotation_color)
 
     x_min = global_x[0] if len(global_x) > 0 else 0.0
     x_max = max(global_extent, x_min + 1.0)
@@ -1324,6 +1400,11 @@ def main(argv: Sequence[str]) -> int:
             query_annotations,
             reference_annotations,
             args.annotation_label_size,
+            args.annotation_thickness,
+            args.annotation_alpha,
+            args.reference_annotation_color,
+            args.query_annotation_color,
+            args.annotation_label_jitter,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)

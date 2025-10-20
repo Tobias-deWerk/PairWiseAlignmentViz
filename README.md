@@ -29,6 +29,11 @@ Additional tuning parameters can be supplied through optional flags:
 - `--query-annotation`: path to a per-stream gene annotation file for the query backbone. Each annotation file contains tab-delimited gene and feature records (see below).
 - `--reference-annotation`: path to a per-stream gene annotation file for the reference backbone.
 - `--annotation-label-size`: font size for the gene labels drawn alongside annotations (default: 10.0; pass `NA` or `NULL` to hide labels).
+- `--annotation-thickness`: line width used for coding segments in gene annotations (default: 4.0).
+- `--annotation-alpha`: alpha transparency applied to annotation overlays (default: 0.85).
+- `--reference-annotation-color`: color used for reference annotations (default: `#984ea3`).
+- `--query-annotation-color`: color used for query annotations (default: `#ff7f00`).
+- `--annotation-label-jitter`: horizontal jitter amplitude for annotation labels to reduce overlap (default: 0.35; set to 0 to disable).
 
 Insertions that meet or exceed `--min-gap-size` are rendered as smooth, fixed-width
 Bezier arcs that peel away from the backbone and rejoin it with a mirrored slope.
@@ -62,4 +67,4 @@ When `--query-annotation` and/or `--reference-annotation` are supplied, the visu
 <next_gene_id> ...
 ```
 
-Gene coordinates are expressed in the local coordinate system for the stream (1-based, ignoring gaps). The direction column must be either `<` or `>` and is included in the rendered labels (e.g., `< gene1` or `gene2 >`). Feature rows describe named segments—commonly `UTR` and `exon` entries. Any gaps between features are automatically rendered as introns. Exons are drawn with a thick overlay, whereas UTRs and introns inherit the backbone width. Labels can be disabled by passing `--annotation-label-size NULL`.
+Gene coordinates are expressed in the local coordinate system for the stream (1-based, ignoring gaps). The direction column must be either `<` or `>` and is included in the rendered labels (e.g., `< gene1` or `gene2 >`). Feature rows describe named segments—commonly `UTR` and `exon` entries. Any gaps between features are automatically rendered as introns. Exons are drawn with a thick overlay, whereas UTRs and introns inherit the backbone width. Labels can be disabled by passing `--annotation-label-size NULL`, and their horizontal jitter can be tuned with `--annotation-label-jitter`.
