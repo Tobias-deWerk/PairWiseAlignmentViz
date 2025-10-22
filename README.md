@@ -34,6 +34,8 @@ Additional tuning parameters can be supplied through optional flags:
 - `--reference-annotation-color`: color used for reference annotations (default: `#984ea3`).
 - `--query-annotation-color`: color used for query annotations (default: `#ff7f00`).
 - `--annotation-label-jitter`: horizontal jitter amplitude for annotation labels to reduce overlap (default: 0.35; set to 0 to disable).
+- `--annotation-max-layers`: maximum number of stacked annotation tracks drawn per stream (default: 3).
+- `--annotation-spacing`: vertical distance (in data units) between stacked annotation tracks (default: 0.8; set to 0 to collapse them onto the backbone).
 
 Insertions that meet or exceed `--min-gap-size` are rendered as smooth, fixed-width
 Bezier arcs that peel away from the backbone and rejoin it with a mirrored slope.
@@ -67,4 +69,4 @@ When `--query-annotation` and/or `--reference-annotation` are supplied, the visu
 <next_gene_id> ...
 ```
 
-Gene coordinates are expressed in the local coordinate system for the stream (1-based, ignoring gaps). The direction column must be either `<` or `>` and is included in the rendered labels (e.g., `< gene1` or `gene2 >`). Feature rows describe named segments—commonly `UTR` and `exon` entries. Any gaps between features are automatically rendered as introns. Exons are drawn with a thick overlay, whereas UTRs and introns inherit the backbone width. Labels can be disabled by passing `--annotation-label-size NULL`, and their horizontal jitter can be tuned with `--annotation-label-jitter`.
+Gene coordinates are expressed in the local coordinate system for the stream (1-based, ignoring gaps). The direction column must be either `<` or `>` and is included in the rendered labels (e.g., `< gene1` or `gene2 >`). Feature rows describe named segments—commonly `UTR` and `exon` entries. Any gaps between features are automatically rendered as introns. Exons are drawn with a thick overlay, whereas UTRs and introns inherit the backbone width. Overlapping genes are automatically assigned to stacked annotation tracks (up to `--annotation-max-layers` per stream), each offset from the backbone by `--annotation-spacing`. Additional overlaps beyond the configured layer cap are omitted. Labels can be disabled by passing `--annotation-label-size NULL`, and their horizontal jitter can be tuned with `--annotation-label-jitter`.

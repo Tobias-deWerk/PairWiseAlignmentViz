@@ -34,6 +34,8 @@ DEFAULT_ANNOTATION_THICKNESS = 4.0
 DEFAULT_ANNOTATION_ALPHA = 0.85
 DEFAULT_REF_ANNOTATION_COLOR = "#984ea3"
 DEFAULT_QUERY_ANNOTATION_COLOR = "#ff7f00"
+DEFAULT_ANNOTATION_MAX_LAYERS = 3
+DEFAULT_ANNOTATION_SPACING = 0.8
 ANNOTATION_LABEL_OFFSET = 0.18
 DEFAULT_ANNOTATION_LABEL_JITTER = 0.35
 
@@ -60,6 +62,16 @@ def parse_nonnegative_float(value: str) -> float:
         raise argparse.ArgumentTypeError("value must be a floating-point number") from exc
     if parsed < 0:
         raise argparse.ArgumentTypeError("value must be non-negative")
+    return parsed
+
+
+def parse_positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:  # pragma: no cover - argparse error propagation
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be a positive integer")
     return parsed
 
 
@@ -135,6 +147,7 @@ class GeneLabelInfo:
     x: float
     y: float
     annotation: GeneAnnotation
+    layer: int
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -281,6 +294,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=parse_nonnegative_float,
         default=DEFAULT_ANNOTATION_LABEL_JITTER,
         help="Horizontal jitter amplitude for annotation labels (set to 0 to disable)",
+    )
+    parser.add_argument(
+        "--annotation-max-layers",
+        type=parse_positive_int,
+        default=DEFAULT_ANNOTATION_MAX_LAYERS,
+        help="Maximum number of parallel annotation layers rendered per stream",
+    )
+    parser.add_argument(
+        "--annotation-spacing",
+        type=parse_nonnegative_float,
+        default=DEFAULT_ANNOTATION_SPACING,
+        help="Vertical spacing (in data units) between stacked annotation layers",
     )
     return parser.parse_args(argv)
 
@@ -1038,28 +1063,62 @@ def compute_annotation_label_jitter(
     return (value * 2.0 - 1.0) * amplitude
 
 
+def assign_annotation_layers(
+    annotations: Sequence[GeneAnnotation], max_layers: int
+) -> Dict[int, int]:
+    if max_layers <= 0:
+        return {}
+    layer_end: List[float] = [-math.inf] * max_layers
+    assignments: Dict[int, int] = {}
+    sorted_indices = sorted(
+        range(len(annotations)), key=lambda idx: (annotations[idx].start, annotations[idx].end, idx)
+    )
+    for original_idx in sorted_indices:
+        annotation = annotations[original_idx]
+        assigned_layer: Optional[int] = None
+        for layer in range(max_layers):
+            if annotation.start > layer_end[layer]:
+                assigned_layer = layer
+                layer_end[layer] = annotation.end
+                break
+        if assigned_layer is not None:
+            assignments[original_idx] = assigned_layer
+    return assignments
+
+
 def prepare_annotation_drawables(
     annotations: Sequence[GeneAnnotation],
     local_positions: Sequence[int],
     is_gap: Sequence[bool],
     stream_x: np.ndarray,
     stream_y: np.ndarray,
-) -> Tuple[List[np.ndarray], List[np.ndarray], List[GeneLabelInfo]]:
+    max_layers: int,
+    spacing: float,
+    vertical_direction: int,
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[GeneLabelInfo], int]:
     coding_segments: List[np.ndarray] = []
     noncoding_segments: List[np.ndarray] = []
     labels: List[GeneLabelInfo] = []
+    max_used_layer = -1
 
     index_map = build_local_index_map(local_positions, is_gap)
+    assignments = assign_annotation_layers(annotations, max_layers)
 
-    for annotation in annotations:
+    for idx, annotation in enumerate(annotations):
+        layer = assignments.get(idx)
+        if layer is None:
+            continue
+        max_used_layer = max(max_used_layer, layer)
+        offset = vertical_direction * spacing * layer if spacing > 0 else 0.0
         gene_indices = collect_indices_for_range(index_map, annotation.start, annotation.end)
         if gene_indices:
             mid_index = gene_indices[len(gene_indices) // 2]
             labels.append(
                 GeneLabelInfo(
                     x=float(stream_x[mid_index]),
-                    y=float(stream_y[mid_index]),
+                    y=float(stream_y[mid_index] + offset),
                     annotation=annotation,
+                    layer=layer,
                 )
             )
         for feature in annotation.features:
@@ -1068,12 +1127,15 @@ def prepare_annotation_drawables(
                 segment = indices_to_segment(run, stream_x, stream_y)
                 if segment is None:
                     continue
+                if offset != 0.0:
+                    segment = segment.copy()
+                    segment[:, 1] = segment[:, 1] + offset
                 if feature.kind == "exon":
                     coding_segments.append(segment)
                 else:
                     noncoding_segments.append(segment)
 
-    return coding_segments, noncoding_segments, labels
+    return coding_segments, noncoding_segments, labels, max_used_layer
 
 
 def plot_alignment(
@@ -1101,6 +1163,8 @@ def plot_alignment(
     reference_annotation_color: str,
     query_annotation_color: str,
     annotation_label_jitter: float,
+    annotation_max_layers: int,
+    annotation_spacing: float,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -1126,23 +1190,31 @@ def plot_alignment(
         query_coding_segments,
         query_noncoding_segments,
         query_label_info,
+        query_max_layer,
     ) = prepare_annotation_drawables(
         query_annotations,
         data.query_local_positions,
         data.is_query_gap,
         query_x,
         query_positions,
+        annotation_max_layers,
+        annotation_spacing,
+        1,
     )
     (
         reference_coding_segments,
         reference_noncoding_segments,
         reference_label_info,
+        reference_max_layer,
     ) = prepare_annotation_drawables(
         reference_annotations,
         data.reference_local_positions,
         data.is_reference_gap,
         reference_x,
         reference_positions,
+        annotation_max_layers,
+        annotation_spacing,
+        -1,
     )
 
     def add_annotation_segments(
@@ -1312,6 +1384,18 @@ def plot_alignment(
     y_min = min(y_min_candidates) - 0.2 if y_min_candidates else -0.5
     y_max = max(y_max_candidates) + 0.2 if y_max_candidates else 1.5
 
+    if annotation_spacing > 0:
+        if query_max_layer >= 0:
+            y_max += annotation_spacing * query_max_layer
+        if reference_max_layer >= 0:
+            y_min -= annotation_spacing * reference_max_layer
+
+    if annotation_label_size is not None:
+        if query_max_layer >= 0:
+            y_max += ANNOTATION_LABEL_OFFSET
+        if reference_max_layer >= 0:
+            y_min -= ANNOTATION_LABEL_OFFSET
+
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
@@ -1405,6 +1489,8 @@ def main(argv: Sequence[str]) -> int:
             args.reference_annotation_color,
             args.query_annotation_color,
             args.annotation_label_jitter,
+            args.annotation_max_layers,
+            args.annotation_spacing,
         )
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)
