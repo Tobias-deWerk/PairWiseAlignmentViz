@@ -4,13 +4,15 @@ A two-stream loop-and-bump visualization engine for the pairwise alignment of tw
 ## Usage
 
 ```
-python align_viz.py <input.fasta> <width> <height> <dpi> <output.svg>
+python align_viz.py <input.fasta> <width|auto> <height> <dpi> <output.svg>
 ```
 
 The visualization depends on `matplotlib`. Install it in your active environment
 before invoking the script (for example, `pip install matplotlib`).
 
 Additional tuning parameters can be supplied through optional flags:
+
+- Positional `width`: accepts either a positive numeric width (inches) or `auto`. In `auto` mode, width scales linearly with alignment span in global-x space, calibrated so a span of ~80,278 maps to a width of 125 inches (with a minimum of 8 inches for short alignments).
 
 - `--min-gap-size`: gap length threshold used by weak-segment heuristics and gap summarization (default: 10).
 - `--block-size`: maximum block length evaluated as a whole before switching to the sliding window heuristic (default: 100).

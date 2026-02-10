@@ -14,7 +14,7 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,6 +38,10 @@ DEFAULT_ANNOTATION_MAX_LAYERS = 3
 DEFAULT_ANNOTATION_SPACING = 0.8
 ANNOTATION_LABEL_OFFSET = 0.18
 DEFAULT_ANNOTATION_LABEL_JITTER = 0.35
+AUTO_WIDTH_TOKEN = "auto"
+AUTO_WIDTH_REFERENCE_GLOBAL_X = 80_278.0
+AUTO_WIDTH_REFERENCE_INCHES = 125.0
+AUTO_WIDTH_MIN_INCHES = 8.0
 
 
 def parse_optional_positive_float(value: str) -> Optional[float]:
@@ -63,6 +67,32 @@ def parse_nonnegative_float(value: str) -> float:
     if parsed < 0:
         raise argparse.ArgumentTypeError("value must be non-negative")
     return parsed
+
+
+def parse_width_arg(value: str) -> Union[float, str]:
+    normalized = value.strip().lower()
+    if normalized == AUTO_WIDTH_TOKEN:
+        return AUTO_WIDTH_TOKEN
+    try:
+        parsed = float(value)
+    except ValueError as exc:  # pragma: no cover - argparse error propagation
+        raise argparse.ArgumentTypeError(
+            "width must be a floating-point number or 'auto'"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("width must be positive")
+    return parsed
+
+
+def resolve_figure_width(width_arg: Union[float, str], global_extent: float) -> float:
+    if isinstance(width_arg, float):
+        return width_arg
+    if width_arg != AUTO_WIDTH_TOKEN:
+        raise ValueError(f"Unsupported width argument: {width_arg!r}")
+    if global_extent <= 0:
+        return AUTO_WIDTH_MIN_INCHES
+    scaled = AUTO_WIDTH_REFERENCE_INCHES * (global_extent / AUTO_WIDTH_REFERENCE_GLOBAL_X)
+    return max(AUTO_WIDTH_MIN_INCHES, scaled)
 
 
 def parse_positive_int(value: str) -> int:
@@ -155,7 +185,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         description="Visualize pairwise DNA sequence alignments with loop/bump glyphs."
     )
     parser.add_argument("input", type=Path, help="FASTA file containing the alignment")
-    parser.add_argument("width", type=float, help="Figure width (inches)")
+    parser.add_argument(
+        "width",
+        type=parse_width_arg,
+        help=(
+            "Figure width (inches) or 'auto' to scale from alignment span "
+            f"(calibrated so global_x≈{int(AUTO_WIDTH_REFERENCE_GLOBAL_X):,} maps to "
+            f"{AUTO_WIDTH_REFERENCE_INCHES:g} inches)"
+        ),
+    )
     parser.add_argument("height", type=float, help="Figure height (inches)")
     parser.add_argument("dpi", type=int, help="Figure resolution in dots per inch")
     parser.add_argument(
@@ -1464,6 +1502,7 @@ def main(argv: Sequence[str]) -> int:
             query_positions,
             reference_positions,
         )
+        resolved_width = resolve_figure_width(args.width, global_extent)
         plot_alignment(
             data,
             global_x,
@@ -1473,7 +1512,7 @@ def main(argv: Sequence[str]) -> int:
             reference_positions,
             global_extent,
             gap_labels,
-            args.width,
+            resolved_width,
             args.height,
             args.dpi,
             args.output,
