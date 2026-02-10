@@ -20,6 +20,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
+from core.params import RenderParams
+from core.service import export_to_file_for_cli, prepare_session, write_debug_tables_for_cli
+
 
 NUCLEOTIDE_COLORS: Dict[str, str] = {
     "A": "#4daf4a",  # green
@@ -1203,6 +1206,7 @@ def plot_alignment(
     annotation_label_jitter: float,
     annotation_max_layers: int,
     annotation_spacing: float,
+    x_window: Optional[Tuple[float, float]] = None,
 ) -> None:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
 
@@ -1434,6 +1438,13 @@ def plot_alignment(
         if reference_max_layer >= 0:
             y_min -= ANNOTATION_LABEL_OFFSET
 
+    if x_window is not None:
+        window_start, window_end = x_window
+        x_min = max(x_min, min(window_start, window_end))
+        x_max = min(x_max, max(window_start, window_end))
+        if x_max <= x_min:
+            x_max = x_min + 1.0
+
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
@@ -1446,91 +1457,20 @@ def plot_alignment(
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     try:
-        query, reference, query_name, reference_name = parse_fasta_pair(args.input)
+        params = RenderParams.from_cli_args(args)
+        session = prepare_session(
+            input_path=args.input,
+            params=params,
+            query_annotation_path=args.query_annotation,
+            reference_annotation_path=args.reference_annotation,
+        )
     except Exception as exc:  # pragma: no cover - user input validation
-        print(f"Error while parsing FASTA file: {exc}", file=sys.stderr)
+        print(f"Error while parsing input files: {exc}", file=sys.stderr)
         return 1
 
     try:
-        query_annotations = parse_annotation_file(args.query_annotation)
-    except Exception as exc:  # pragma: no cover - user input validation
-        print(f"Error while parsing query annotations: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        reference_annotations = parse_annotation_file(args.reference_annotation)
-    except Exception as exc:  # pragma: no cover - user input validation
-        print(f"Error while parsing reference annotations: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        data = compute_alignment_data(
-            query,
-            reference,
-            query_name,
-            reference_name,
-            args.min_gap_size,
-            args.block_size,
-            args.min_sequence_identity,
-            args.window_size,
-        )
-        (
-            global_x,
-            query_x,
-            reference_x,
-            query_positions,
-            reference_positions,
-            global_extent,
-            gap_labels,
-        ) = construct_stream_paths(
-            data,
-            data.weak_regions,
-            args.backbone_gap,
-            args.bump_scale,
-            args.gap_max_height,
-            args.gap_width,
-            args.min_gap_size,
-            args.gap_height_scale,
-            args.indel_height_scale,
-        )
-        write_stream_debug_tables(
-            args.output,
-            data,
-            global_x,
-            query_x,
-            reference_x,
-            query_positions,
-            reference_positions,
-        )
-        resolved_width = resolve_figure_width(args.width, global_extent)
-        plot_alignment(
-            data,
-            global_x,
-            query_x,
-            reference_x,
-            query_positions,
-            reference_positions,
-            global_extent,
-            gap_labels,
-            resolved_width,
-            args.height,
-            args.dpi,
-            args.output,
-            args.tick_interval,
-            args.backbone_thickness,
-            args.mismatch_line_width,
-            args.gap_label_size,
-            query_annotations,
-            reference_annotations,
-            args.annotation_label_size,
-            args.annotation_thickness,
-            args.annotation_alpha,
-            args.reference_annotation_color,
-            args.query_annotation_color,
-            args.annotation_label_jitter,
-            args.annotation_max_layers,
-            args.annotation_spacing,
-        )
+        write_debug_tables_for_cli(session, args.output)
+        export_to_file_for_cli(session, args.output)
     except Exception as exc:  # pragma: no cover - runtime safety
         print(f"Error while creating visualization: {exc}", file=sys.stderr)
         return 1

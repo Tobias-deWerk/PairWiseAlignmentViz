@@ -1,0 +1,166 @@
+:root {
+  --bg: #e8edf2;
+  --panel: #0f5f84;
+  --panel-alt: #15445d;
+  --text: #ecf3f7;
+  --ink: #0e1e29;
+  --border: #14374a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top right, #f5f8fb 0%, var(--bg) 45%, #d8e1ea 100%);
+  color: var(--ink);
+}
+
+.page {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.top-row,
+.controls-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr) minmax(220px, 0.7fr);
+}
+
+.controls-row {
+  grid-template-columns: 1.7fr 0.6fr;
+}
+
+.panel {
+  background: linear-gradient(160deg, var(--panel) 0%, var(--panel-alt) 100%);
+  color: var(--text);
+  border: 2px solid var(--border);
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.panel.compact {
+  align-self: start;
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.92rem;
+}
+
+input,
+button,
+summary {
+  font: inherit;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  border: 1px solid #8aa8ba;
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: #f4f8fb;
+  color: #102a3a;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+button {
+  border: 1px solid #88a9bc;
+  background: #f4f9fc;
+  color: #0d3349;
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #dbeaf3;
+}
+
+.path-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.grid {
+  display: grid;
+  gap: 8px;
+}
+
+.grid.two {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+}
+
+.grid.three {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.actions {
+  margin-top: 10px;
+}
+
+details {
+  margin-top: 8px;
+}
+
+details summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.viewer-wrap {
+  border: 2px solid #111;
+  background: #f7fafc;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.viewer-wrap h2 {
+  margin: 0 0 8px;
+}
+
+.viewer {
+  min-height: 350px;
+  max-height: 64vh;
+  overflow: auto;
+  border: 1px solid #253845;
+  background: #fff;
+}
+
+.viewer svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+#status {
+  white-space: pre-wrap;
+  font-size: 0.82rem;
+  min-height: 4em;
+  margin: 8px 0 0;
+}
+
+@media (max-width: 1120px) {
+  .top-row,
+  .controls-row,
+  .grid.three,
+  .grid.two {
+    grid-template-columns: 1fr;
+  }
+}

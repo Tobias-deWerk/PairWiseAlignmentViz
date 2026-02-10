@@ -59,6 +59,20 @@ gap glyphs were positioned if you need to refine their presentation.
 
 The script accepts any pairwise alignment FASTA that contains exactly two sequences of equal length (including gap characters) such as MAFFT pairwise outputs.
 
+## Browser UI (Flask)
+
+An interactive browser app is available with path-based file inputs, full parameter controls, viewport panning, coordinate probing, and SVG/PNG export.
+
+Start it with:
+
+```
+python -m webapp.app
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+The browser app expects file paths on the same machine as the Flask process. The browse buttons help with file-name selection, but due to browser sandbox rules you should paste full absolute paths for loading.
+
 ## Gene annotations
 
 When `--query-annotation` and/or `--reference-annotation` are supplied, the visualization overlays per-gene features on the respective stream. Annotation files follow a block-based format:
