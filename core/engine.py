@@ -34,14 +34,14 @@ NUCLEOTIDE_COLORS: Dict[str, str] = {
 }
 
 
-DEFAULT_ANNOTATION_THICKNESS = 4.0
+DEFAULT_ANNOTATION_THICKNESS = 10.0
 DEFAULT_ANNOTATION_ALPHA = 0.85
 DEFAULT_REF_ANNOTATION_COLOR = "#984ea3"
 DEFAULT_QUERY_ANNOTATION_COLOR = "#ff7f00"
 DEFAULT_ANNOTATION_MAX_LAYERS = 3
 DEFAULT_ANNOTATION_SPACING = 0.8
 ANNOTATION_LABEL_OFFSET = 0.18
-DEFAULT_ANNOTATION_LABEL_JITTER = 0.35
+DEFAULT_ANNOTATION_LABEL_JITTER = 20.0
 AUTO_WIDTH_TOKEN = "auto"
 AUTO_WIDTH_REFERENCE_GLOBAL_X = 80_278.0
 AUTO_WIDTH_REFERENCE_INCHES = 125.0
@@ -238,55 +238,55 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--backbone-gap",
         type=float,
-        default=1.0,
+        default=0.5,
         help="Vertical distance between the query and reference backbones",
     )
     parser.add_argument(
         "--backbone-thickness",
         type=float,
-        default=2.0,
+        default=3.0,
         help="Line width used when drawing the query and reference backbones",
     )
     parser.add_argument(
         "--bump-scale",
         type=float,
-        default=1.0,
+        default=0.3,
         help="Multiplier applied to weak-alignment bump heights",
     )
     parser.add_argument(
         "--mismatch-line-width",
         type=float,
-        default=1.2,
+        default=0.4,
         help="Line width used for mismatch ladder rungs",
     )
     parser.add_argument(
         "--gap-max-height",
         type=float,
-        default=0.8,
+        default=2.0,
         help="Maximum amplitude (in data units) for gap beak glyphs",
     )
     parser.add_argument(
         "--gap-width",
         type=float,
-        default=0.0,
+        default=50.0,
         help="Horizontal width (in nucleotides) assigned to each gap column",
     )
     parser.add_argument(
         "--gap-height-scale",
         type=float,
-        default=0.04,
+        default=0.001,
         help="Multiplier applied to gap amplitudes before clamping to the maximum height",
     )
     parser.add_argument(
         "--indel-height-scale",
         type=float,
-        default=0.04,
+        default=0.01,
         help="Multiplier applied to short indel amplitudes (length < min gap size)",
     )
     parser.add_argument(
         "--gap-label-size",
         type=parse_optional_positive_float,
-        default=8.0,
+        default=None,
         help=(
             "Font size used for '+x bp' gap labels; set to NA or NULL to disable label rendering"
         ),

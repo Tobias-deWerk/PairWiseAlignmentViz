@@ -4,13 +4,13 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
 AUTO_WIDTH_TOKEN = "auto"
-DEFAULT_ANNOTATION_THICKNESS = 4.0
+DEFAULT_ANNOTATION_THICKNESS = 10.0
 DEFAULT_ANNOTATION_ALPHA = 0.85
 DEFAULT_REF_ANNOTATION_COLOR = "#984ea3"
 DEFAULT_QUERY_ANNOTATION_COLOR = "#ff7f00"
 DEFAULT_ANNOTATION_MAX_LAYERS = 3
 DEFAULT_ANNOTATION_SPACING = 0.8
-DEFAULT_ANNOTATION_LABEL_JITTER = 0.35
+DEFAULT_ANNOTATION_LABEL_JITTER = 20.0
 
 
 WidthArg = Union[float, str]
@@ -26,15 +26,15 @@ class RenderParams:
     min_sequence_identity: float = 0.7
     window_size: int = 20
     tick_interval: int = 10_000
-    backbone_gap: float = 1.0
-    backbone_thickness: float = 2.0
-    bump_scale: float = 1.0
-    mismatch_line_width: float = 1.2
-    gap_max_height: float = 0.8
-    gap_width: float = 0.0
-    gap_height_scale: float = 0.04
-    indel_height_scale: float = 0.04
-    gap_label_size: Optional[float] = 8.0
+    backbone_gap: float = 0.5
+    backbone_thickness: float = 3.0
+    bump_scale: float = 0.3
+    mismatch_line_width: float = 0.4
+    gap_max_height: float = 2.0
+    gap_width: float = 50.0
+    gap_height_scale: float = 0.001
+    indel_height_scale: float = 0.01
+    gap_label_size: Optional[float] = None
     annotation_label_size: Optional[float] = 10.0
     annotation_thickness: float = DEFAULT_ANNOTATION_THICKNESS
     annotation_alpha: float = DEFAULT_ANNOTATION_ALPHA
@@ -88,15 +88,15 @@ class RenderParams:
             min_sequence_identity=to_float(require("min_sequence_identity", 0.7), min_value=0.0, max_value=1.0, name="min_sequence_identity"),
             window_size=to_int(require("window_size", 20), positive=True, name="window_size"),
             tick_interval=to_int(require("tick_interval", 10_000), min_value=0, name="tick_interval"),
-            backbone_gap=to_float(require("backbone_gap", 1.0), min_value=0.0, name="backbone_gap"),
-            backbone_thickness=to_float(require("backbone_thickness", 2.0), min_value=0.0, name="backbone_thickness"),
-            bump_scale=to_float(require("bump_scale", 1.0), min_value=0.0, name="bump_scale"),
-            mismatch_line_width=to_float(require("mismatch_line_width", 1.2), min_value=0.0, name="mismatch_line_width"),
-            gap_max_height=to_float(require("gap_max_height", 0.8), min_value=0.0, name="gap_max_height"),
-            gap_width=to_float(require("gap_width", 0.0), min_value=0.0, name="gap_width"),
-            gap_height_scale=to_float(require("gap_height_scale", 0.04), min_value=0.0, name="gap_height_scale"),
-            indel_height_scale=to_float(require("indel_height_scale", 0.04), min_value=0.0, name="indel_height_scale"),
-            gap_label_size=parse_optional_size(require("gap_label_size", 8.0), "gap_label_size"),
+            backbone_gap=to_float(require("backbone_gap", 0.5), min_value=0.0, name="backbone_gap"),
+            backbone_thickness=to_float(require("backbone_thickness", 3.0), min_value=0.0, name="backbone_thickness"),
+            bump_scale=to_float(require("bump_scale", 0.3), min_value=0.0, name="bump_scale"),
+            mismatch_line_width=to_float(require("mismatch_line_width", 0.4), min_value=0.0, name="mismatch_line_width"),
+            gap_max_height=to_float(require("gap_max_height", 2.0), min_value=0.0, name="gap_max_height"),
+            gap_width=to_float(require("gap_width", 50.0), min_value=0.0, name="gap_width"),
+            gap_height_scale=to_float(require("gap_height_scale", 0.001), min_value=0.0, name="gap_height_scale"),
+            indel_height_scale=to_float(require("indel_height_scale", 0.01), min_value=0.0, name="indel_height_scale"),
+            gap_label_size=parse_optional_size(require("gap_label_size", "NULL"), "gap_label_size"),
             annotation_label_size=parse_optional_size(require("annotation_label_size", 10.0), "annotation_label_size"),
             annotation_thickness=to_float(require("annotation_thickness", DEFAULT_ANNOTATION_THICKNESS), min_value=0.0, name="annotation_thickness"),
             annotation_alpha=to_float(require("annotation_alpha", DEFAULT_ANNOTATION_ALPHA), min_value=0.0, max_value=1.0, name="annotation_alpha"),
