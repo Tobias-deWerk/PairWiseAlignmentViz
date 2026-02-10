@@ -11,7 +11,7 @@ def compute_alignment_data(
     min_sequence_identity: float,
     window_size: int,
 ):
-    from align_viz import compute_alignment_data as _compute_alignment_data
+    from core.engine import compute_alignment_data as _compute_alignment_data
 
     return _compute_alignment_data(
         query,
@@ -36,7 +36,7 @@ def construct_stream_paths(
     gap_height_scale: float,
     indel_height_scale: float,
 ):
-    from align_viz import construct_stream_paths as _construct_stream_paths
+    from core.engine import construct_stream_paths as _construct_stream_paths
 
     return _construct_stream_paths(
         data,

@@ -13,6 +13,7 @@ from .params import RenderParams
 from .render import (
     plot_alignment,
     render_bytes,
+    render_svg_with_metadata,
     resolve_figure_width,
     write_stream_debug_tables,
 )
@@ -43,8 +44,12 @@ class RenderResult:
     svg: str
     token: str
     global_extent: float
-    viewport_start: float
-    viewport_end: float
+    x_data_min: float
+    x_data_max: float
+    axes_left_px: float
+    axes_right_px: float
+    svg_width_px: float
+    svg_height_px: float
 
 
 SESSION_CACHE: Dict[str, RenderSession] = {}
@@ -137,9 +142,8 @@ def render_alignment(
     session: RenderSession,
     viewport: Optional[Tuple[float, float]] = None,
 ) -> RenderResult:
-    x_window = normalize_viewport(viewport, session.global_extent)
-    svg_bytes = render_bytes(
-        fmt="svg",
+    del viewport
+    svg_bytes, metadata = render_svg_with_metadata(
         data=session.data,
         global_x=session.global_x,
         query_x=session.query_x,
@@ -165,14 +169,17 @@ def render_alignment(
         annotation_label_jitter=session.params.annotation_label_jitter,
         annotation_max_layers=session.params.annotation_max_layers,
         annotation_spacing=session.params.annotation_spacing,
-        x_window=x_window,
     )
     return RenderResult(
         svg=svg_bytes.decode("utf-8"),
         token=session.token,
         global_extent=session.global_extent,
-        viewport_start=x_window[0],
-        viewport_end=x_window[1],
+        x_data_min=float(metadata.get("x_data_min", 0.0)),
+        x_data_max=float(metadata.get("x_data_max", max(1.0, session.global_extent))),
+        axes_left_px=float(metadata.get("axes_left_px", 0.0)),
+        axes_right_px=float(metadata.get("axes_right_px", 0.0)),
+        svg_width_px=float(metadata.get("svg_width_px", 0.0)),
+        svg_height_px=float(metadata.get("svg_height_px", 0.0)),
     )
 
 

@@ -4,27 +4,21 @@ from pathlib import Path
 
 from flask import Flask, jsonify, make_response, request, send_from_directory
 
+from core.mpl_backend import configure_headless_matplotlib
 from core.service import (
     export_alignment,
     get_session,
-    normalize_viewport,
     probe_alignment,
     render_alignment,
     session_from_payload,
 )
 
+configure_headless_matplotlib()
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
-
-
-def _parse_viewport(payload: dict, extent: float):
-    start = payload.get("viewport_start")
-    end = payload.get("viewport_end")
-    if start is None or end is None:
-        return None
-    return normalize_viewport((float(start), float(end)), extent)
 
 
 @app.get("/")
@@ -37,8 +31,7 @@ def api_render():
     payload = request.get_json(silent=True) or {}
     try:
         session = session_from_payload(payload)
-        viewport = _parse_viewport(payload, session.global_extent)
-        result = render_alignment(session, viewport=viewport)
+        result = render_alignment(session, viewport=None)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -47,8 +40,12 @@ def api_render():
             "token": result.token,
             "svg": result.svg,
             "global_extent": result.global_extent,
-            "viewport_start": result.viewport_start,
-            "viewport_end": result.viewport_end,
+            "x_data_min": result.x_data_min,
+            "x_data_max": result.x_data_max,
+            "axes_left_px": result.axes_left_px,
+            "axes_right_px": result.axes_right_px,
+            "svg_width_px": result.svg_width_px,
+            "svg_height_px": result.svg_height_px,
             "query_name": session.data.query_name,
             "reference_name": session.data.reference_name,
         }
@@ -86,8 +83,7 @@ def api_export():
 
     try:
         session = get_session(token)
-        viewport = _parse_viewport(payload, session.global_extent)
-        blob = export_alignment(session, fmt, viewport=viewport)
+        blob = export_alignment(session, fmt, viewport=None)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -101,4 +97,4 @@ def api_export():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=True, threaded=False)

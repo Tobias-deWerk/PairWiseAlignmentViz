@@ -1,9 +1,11 @@
 const state = {
   token: null,
   globalExtent: 0,
-  viewportStart: 0,
-  viewportEnd: 0,
-  lastPayload: null,
+  metadata: null,
+  probeLocked: false,
+  probeGlobalX: null,
+  probeSvgX: null,
+  probeTimer: null,
 };
 
 const paramIds = [
@@ -57,62 +59,53 @@ function buildPayload() {
     input_path: $("input_path").value.trim(),
     reference_annotation_path: $("reference_annotation_path").value.trim(),
     query_annotation_path: $("query_annotation_path").value.trim(),
-    viewport_start: state.viewportStart,
-    viewport_end: state.viewportEnd,
     params: readParams(),
   };
 }
 
-function updateViewportRange() {
-  const viewportWidth = Math.max(1, Number($("viewport_width").value) || 1);
-  const maxStart = Math.max(0, state.globalExtent - viewportWidth);
-  const slider = $("viewport_start");
-  slider.max = String(Math.max(0, Math.floor(maxStart)));
-  slider.value = String(Math.min(maxStart, state.viewportStart));
+function clamp(value, minValue, maxValue) {
+  return Math.min(maxValue, Math.max(minValue, value));
 }
 
-async function renderCurrent() {
-  const payload = buildPayload();
-  const viewportWidth = Math.max(1, Number($("viewport_width").value) || 1);
-  payload.viewport_start = Math.max(0, Number($("viewport_start").value) || 0);
-  payload.viewport_end = payload.viewport_start + viewportWidth;
-
-  state.viewportStart = payload.viewport_start;
-  state.viewportEnd = payload.viewport_end;
-
-  setStatus("Rendering...");
-  const response = await fetch("/api/render", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Render failed");
-  }
-
-  state.token = data.token;
-  state.globalExtent = Number(data.global_extent) || 0;
-  state.viewportStart = Number(data.viewport_start) || 0;
-  state.viewportEnd = Number(data.viewport_end) || 0;
-  state.lastPayload = payload;
-
-  $("viewer").innerHTML = data.svg;
-  updateViewportRange();
-  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}`);
-  await updateProbe();
+function getViewerSvg() {
+  return $("viewer").querySelector("svg");
 }
 
-async function updateProbe() {
-  if (!state.token) {
-    return;
-  }
-  const slider = $("probe_slider");
-  const sliderVal = Number(slider.value);
-  const sliderMax = Number(slider.max) || 1000;
-  const ratio = sliderVal / sliderMax;
-  const xCoord = state.viewportStart + ratio * (state.viewportEnd - state.viewportStart);
+function updateScrollReadout() {
+  const viewer = $("viewer");
+  const maxScroll = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
+  const probeText = state.probeGlobalX == null ? "-" : state.probeGlobalX.toFixed(2);
+  $("scroll_readout").textContent = `Scroll: ${viewer.scrollLeft.toFixed(0)} / ${maxScroll.toFixed(0)} | Probe x: ${probeText}`;
+}
 
+function extractSvgPoint(evt, svg) {
+  if (!svg || !svg.createSVGPoint) {
+    return null;
+  }
+  const ctm = svg.getScreenCTM();
+  if (!ctm) {
+    return null;
+  }
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX;
+  pt.y = evt.clientY;
+  return pt.matrixTransform(ctm.inverse());
+}
+
+function mapSvgXToDataX(svgX) {
+  const m = state.metadata;
+  if (!m) {
+    return null;
+  }
+  const denom = m.axes_right_px - m.axes_left_px;
+  if (denom <= 0) {
+    return null;
+  }
+  const ratio = clamp((svgX - m.axes_left_px) / denom, 0, 1);
+  return m.x_data_min + ratio * (m.x_data_max - m.x_data_min);
+}
+
+async function fetchProbeAt(xCoord, svgX) {
   const response = await fetch("/api/probe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -122,6 +115,9 @@ async function updateProbe() {
   if (!response.ok) {
     throw new Error(data.error || "Probe failed");
   }
+
+  state.probeGlobalX = Number(data.global_x);
+  state.probeSvgX = Number(svgX);
 
   $("probe_ref_base").textContent = data.reference_base;
   $("probe_query_base").textContent = data.query_base;
@@ -135,11 +131,27 @@ async function updateProbe() {
   if (data.is_query_gap) flags.push("query-gap");
   if (data.is_reference_gap) flags.push("reference-gap");
   $("probe_flags").textContent = flags.length ? flags.join(", ") : "none";
-  drawProbeLine(data.global_x);
+
+  drawProbeLine(svgX);
+  updateScrollReadout();
+}
+
+function queueProbe(xCoord, svgX) {
+  if (state.probeTimer) {
+    clearTimeout(state.probeTimer);
+  }
+  state.probeTimer = setTimeout(async () => {
+    state.probeTimer = null;
+    try {
+      await fetchProbeAt(xCoord, svgX);
+    } catch (err) {
+      setStatus(String(err.message || err), true);
+    }
+  }, 25);
 }
 
 function drawProbeLine(xValue) {
-  const svg = $("viewer").querySelector("svg");
+  const svg = getViewerSvg();
   if (!svg) {
     return;
   }
@@ -169,6 +181,96 @@ function drawProbeLine(xValue) {
   line.setAttribute("y2", String(y + h));
 }
 
+function attachProbeInteractions() {
+  const viewer = $("viewer");
+  const svg = getViewerSvg();
+  if (!svg) {
+    return;
+  }
+
+  viewer.addEventListener("scroll", () => {
+    updateScrollReadout();
+  });
+
+  svg.addEventListener("mousemove", (evt) => {
+    if (!state.token || state.probeLocked) {
+      return;
+    }
+    const svgPoint = extractSvgPoint(evt, svg);
+    if (!svgPoint) {
+      return;
+    }
+    const dataX = mapSvgXToDataX(svgPoint.x);
+    if (dataX == null) {
+      return;
+    }
+    queueProbe(dataX, svgPoint.x);
+  });
+
+  svg.addEventListener("click", (evt) => {
+    if (!state.token) {
+      return;
+    }
+    if (state.probeLocked) {
+      state.probeLocked = false;
+      setStatus("Probe unlocked (hover active).", false);
+      return;
+    }
+    const svgPoint = extractSvgPoint(evt, svg);
+    if (!svgPoint) {
+      return;
+    }
+    const dataX = mapSvgXToDataX(svgPoint.x);
+    if (dataX == null) {
+      return;
+    }
+    state.probeLocked = true;
+    queueProbe(dataX, svgPoint.x);
+    setStatus("Probe locked. Click again to unlock.", false);
+  });
+
+  document.addEventListener("keydown", (evt) => {
+    if (evt.key === "Escape" && state.probeLocked) {
+      state.probeLocked = false;
+      setStatus("Probe unlocked (hover active).", false);
+    }
+  });
+
+  updateScrollReadout();
+}
+
+async function renderCurrent() {
+  const payload = buildPayload();
+
+  setStatus("Rendering...");
+  const response = await fetch("/api/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Render failed");
+  }
+
+  state.token = data.token;
+  state.globalExtent = Number(data.global_extent) || 0;
+  state.metadata = {
+    x_data_min: Number(data.x_data_min),
+    x_data_max: Number(data.x_data_max),
+    axes_left_px: Number(data.axes_left_px),
+    axes_right_px: Number(data.axes_right_px),
+    svg_width_px: Number(data.svg_width_px),
+    svg_height_px: Number(data.svg_height_px),
+  };
+  state.probeLocked = false;
+  state.probeGlobalX = null;
+
+  $("viewer").innerHTML = data.svg;
+  attachProbeInteractions();
+  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}`);
+}
+
 async function exportFigure(format) {
   if (!state.token) {
     throw new Error("Render before exporting.");
@@ -177,12 +279,7 @@ async function exportFigure(format) {
   const response = await fetch("/api/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      token: state.token,
-      format,
-      viewport_start: state.viewportStart,
-      viewport_end: state.viewportEnd,
-    }),
+    body: JSON.stringify({ token: state.token, format }),
   });
 
   if (!response.ok) {
@@ -234,37 +331,6 @@ function bindEvents() {
     }
   });
 
-  $("viewport_start").addEventListener("input", async (event) => {
-    state.viewportStart = Number(event.target.value) || 0;
-    state.viewportEnd = state.viewportStart + Math.max(1, Number($("viewport_width").value) || 1);
-    if (state.token) {
-      try {
-        await renderCurrent();
-      } catch (err) {
-        setStatus(String(err.message || err), true);
-      }
-    }
-  });
-
-  $("viewport_width").addEventListener("change", async () => {
-    updateViewportRange();
-    if (state.token) {
-      try {
-        await renderCurrent();
-      } catch (err) {
-        setStatus(String(err.message || err), true);
-      }
-    }
-  });
-
-  $("probe_slider").addEventListener("input", async () => {
-    try {
-      await updateProbe();
-    } catch (err) {
-      setStatus(String(err.message || err), true);
-    }
-  });
-
   $("export_svg").addEventListener("click", async () => {
     try {
       await exportFigure("svg");
@@ -287,7 +353,7 @@ function bindEvents() {
 function bootstrap() {
   setupFileBrowseButtons();
   bindEvents();
-  updateViewportRange();
+  updateScrollReadout();
 }
 
 bootstrap();

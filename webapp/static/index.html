@@ -98,18 +98,12 @@
 
       <section class="controls-row">
         <div class="panel wide">
-          <h2>Scroll / Viewport</h2>
-          <div class="grid three">
-            <label>Window width (global-x)
-              <input id="viewport_width" type="number" min="1" value="2000" />
-            </label>
-            <label>Viewport start
-              <input id="viewport_start" type="range" min="0" max="0" value="0" />
-            </label>
-            <label>Probe x (within viewport)
-              <input id="probe_slider" type="range" min="0" max="1000" value="0" />
-            </label>
-          </div>
+          <h2>Scroll / Probe</h2>
+          <p class="helper">
+            The full-width SVG is rendered at native scale. Scroll horizontally in the viewer.
+            Move the mouse across the SVG to probe coordinates; click to lock/unlock the probe.
+          </p>
+          <div id="scroll_readout" class="readout">Scroll: - | Probe x: -</div>
         </div>
 
         <div class="panel compact">

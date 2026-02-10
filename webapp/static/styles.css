@@ -138,15 +138,27 @@ details summary {
 .viewer {
   min-height: 350px;
   max-height: 64vh;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   border: 1px solid #253845;
   background: #fff;
 }
 
 .viewer svg {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
+  max-width: none;
+}
+
+.helper {
+  margin: 0 0 10px;
+  opacity: 0.95;
+}
+
+.readout {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.95rem;
 }
 
 #status {

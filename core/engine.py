@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command line visualization tool for pairwise DNA alignment outputs.
 
 The tool expects a FASTA file that contains two aligned sequences. The
@@ -24,8 +23,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from core.params import RenderParams
-from core.service import export_to_file_for_cli, prepare_session, write_debug_tables_for_cli
 
 
 NUCLEOTIDE_COLORS: Dict[str, str] = {
@@ -1211,8 +1208,14 @@ def plot_alignment(
     annotation_max_layers: int,
     annotation_spacing: float,
     x_window: Optional[Tuple[float, float]] = None,
-) -> None:
+    *,
+    return_metadata: bool = False,
+    tight_bbox: bool = True,
+    full_canvas_axes: bool = False,
+) -> Optional[Dict[str, float]]:
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
+    if full_canvas_axes:
+        fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
 
     line_width = max(backbone_thickness, 0.0)
     ax.plot(
@@ -1454,33 +1457,27 @@ def plot_alignment(
 
     ax.axis("off")
 
-    fig.savefig(output, bbox_inches="tight")
+    x_data_min, x_data_max = ax.get_xlim()
+
+    metadata: Optional[Dict[str, float]] = None
+    if return_metadata:
+        # Force a draw so we can query rendered geometry.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        bbox = ax.get_window_extent(renderer=renderer)
+        fig_width_units = fig.get_figwidth() * 72.0
+        fig_height_units = fig.get_figheight() * 72.0
+        scale_x = fig_width_units / (fig.get_figwidth() * fig.dpi)
+        metadata = {
+            "x_data_min": float(x_data_min),
+            "x_data_max": float(x_data_max),
+            "axes_left_px": float(bbox.x0 * scale_x),
+            "axes_right_px": float(bbox.x1 * scale_x),
+            "svg_width_px": float(fig_width_units),
+            "svg_height_px": float(fig_height_units),
+        }
+
+    fig.savefig(output, bbox_inches="tight" if tight_bbox else None)
     plt.close(fig)
+    return metadata
 
-
-def main(argv: Sequence[str]) -> int:
-    args = parse_args(argv)
-    try:
-        params = RenderParams.from_cli_args(args)
-        session = prepare_session(
-            input_path=args.input,
-            params=params,
-            query_annotation_path=args.query_annotation,
-            reference_annotation_path=args.reference_annotation,
-        )
-    except Exception as exc:  # pragma: no cover - user input validation
-        print(f"Error while parsing input files: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        write_debug_tables_for_cli(session, args.output)
-        export_to_file_for_cli(session, args.output)
-    except Exception as exc:  # pragma: no cover - runtime safety
-        print(f"Error while creating visualization: {exc}", file=sys.stderr)
-        return 1
-
-    return 0
-
-
-if __name__ == "__main__":  # pragma: no cover - CLI entry point
-    raise SystemExit(main(sys.argv[1:]))
