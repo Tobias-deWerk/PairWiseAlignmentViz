@@ -11,6 +11,13 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
@@ -19,6 +26,8 @@ body {
 }
 
 .page {
+  width: 100%;
+  max-width: 100%;
   padding: 16px;
   display: grid;
   gap: 14px;
@@ -33,6 +42,14 @@ body {
 
 .controls-row {
   grid-template-columns: 1.7fr 0.6fr;
+}
+
+.top-row > *,
+.controls-row > *,
+.viewer-wrap,
+.panel,
+.viewer {
+  min-width: 0;
 }
 
 .panel {
@@ -138,8 +155,10 @@ details summary {
 .viewer {
   min-height: 350px;
   max-height: 64vh;
+  width: 100%;
   overflow-x: auto;
   overflow-y: auto;
+  contain: layout paint;
   border: 1px solid #253845;
   background: #fff;
 }
