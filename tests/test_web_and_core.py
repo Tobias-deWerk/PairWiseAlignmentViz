@@ -143,6 +143,83 @@ class CoreTests(unittest.TestCase):
         self.assertIsNone(result["end_local_position"])
         self.assertIn("local=NA-NA", result["fasta"])
 
+    def test_prepare_session_swap_roles_swaps_stream_identity(self):
+        default_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+        )
+        swapped_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+            swap_roles=True,
+        )
+
+        self.assertEqual(swapped_session.data.query_name, default_session.data.reference_name)
+        self.assertEqual(swapped_session.data.reference_name, default_session.data.query_name)
+        self.assertEqual(swapped_session.data.query, default_session.data.reference)
+        self.assertEqual(swapped_session.data.reference, default_session.data.query)
+        self.assertEqual(len(swapped_session.query_annotations), len(default_session.query_annotations))
+        self.assertEqual(len(swapped_session.reference_annotations), len(default_session.reference_annotations))
+
+    def test_extract_sequence_range_swapped_query_uses_swapped_stream(self):
+        default_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+        )
+        swapped_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+            swap_roles=True,
+        )
+        left_idx = 200
+        right_idx = 320
+        swapped_query = extract_sequence_range(
+            swapped_session,
+            start_x=float(swapped_session.global_x[left_idx]),
+            end_x=float(swapped_session.global_x[right_idx]),
+            stream="query",
+        )
+        default_reference = extract_sequence_range(
+            default_session,
+            start_x=float(default_session.global_x[left_idx]),
+            end_x=float(default_session.global_x[right_idx]),
+            stream="reference",
+        )
+
+        self.assertEqual(swapped_query["sequence"], default_reference["sequence"])
+        self.assertIn(f">{swapped_session.data.query_name} selected_region", swapped_query["fasta"])
+
+    def test_probe_alignment_swapped_roles_report_swapped_stream_data(self):
+        default_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+        )
+        swapped_session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+            swap_roles=True,
+        )
+        idx = 250
+        default_probe = probe_alignment(default_session, float(default_session.global_x[idx]))
+        swapped_probe = probe_alignment(swapped_session, float(swapped_session.global_x[idx]))
+
+        self.assertEqual(swapped_probe["query_base"], default_probe["reference_base"])
+        self.assertEqual(swapped_probe["reference_base"], default_probe["query_base"])
+        self.assertEqual(
+            swapped_probe["query_local_position"],
+            default_probe["reference_local_position"],
+        )
+        self.assertEqual(
+            swapped_probe["reference_local_position"],
+            default_probe["query_local_position"],
+        )
+
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
@@ -262,6 +339,56 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(missing_end_resp.status_code, 400)
         self.assertIn("end_x is required", missing_end_resp.get_json()["error"])
+
+    def test_api_render_and_extract_respect_swap_roles(self):
+        base_payload = {
+            "input_path": str(ALIGN),
+            "reference_annotation_path": str(REF_ANNOT),
+            "query_annotation_path": "",
+            "params": {"width": "auto", "height": 6.0, "dpi": 100},
+        }
+
+        default_render = self.client.post("/api/render", json=base_payload)
+        self.assertEqual(default_render.status_code, 200)
+        default_json = default_render.get_json()
+        default_token = default_json["token"]
+
+        swapped_payload = dict(base_payload)
+        swapped_payload["swap_roles"] = True
+        swapped_render = self.client.post("/api/render", json=swapped_payload)
+        self.assertEqual(swapped_render.status_code, 200)
+        swapped_json = swapped_render.get_json()
+        swapped_token = swapped_json["token"]
+
+        self.assertEqual(swapped_json["query_name"], default_json["reference_name"])
+        self.assertEqual(swapped_json["reference_name"], default_json["query_name"])
+
+        default_reference_extract = self.client.post(
+            "/api/extract_sequence",
+            json={
+                "token": default_token,
+                "stream": "reference",
+                "start_x": 100.0,
+                "end_x": 300.0,
+            },
+        )
+        self.assertEqual(default_reference_extract.status_code, 200)
+        default_reference_json = default_reference_extract.get_json()
+
+        swapped_query_extract = self.client.post(
+            "/api/extract_sequence",
+            json={
+                "token": swapped_token,
+                "stream": "query",
+                "start_x": 100.0,
+                "end_x": 300.0,
+            },
+        )
+        self.assertEqual(swapped_query_extract.status_code, 200)
+        swapped_query_json = swapped_query_extract.get_json()
+
+        self.assertEqual(swapped_query_json["sequence"], default_reference_json["sequence"])
+        self.assertEqual(swapped_query_json["stream"], "query")
 
 
 if __name__ == "__main__":
