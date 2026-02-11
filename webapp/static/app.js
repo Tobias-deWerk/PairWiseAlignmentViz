@@ -66,6 +66,7 @@ function buildPayload() {
     input_path: $("input_path").value.trim(),
     reference_annotation_path: $("reference_annotation_path").value.trim(),
     query_annotation_path: $("query_annotation_path").value.trim(),
+    swap_roles: $("swap_roles").checked,
     params: readParams(),
   };
 }

@@ -72,14 +72,36 @@ def _to_optional_path(path_text: Optional[str]) -> Optional[Path]:
     return Path(text)
 
 
+def _to_bool(value: object, *, default: bool = False, name: str = "value") -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return bool(value)
+        raise ValueError(f"{name} must be a boolean")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 def prepare_session(
     *,
     input_path: Path,
     params: RenderParams,
     query_annotation_path: Optional[Path] = None,
     reference_annotation_path: Optional[Path] = None,
+    swap_roles: bool = False,
 ) -> RenderSession:
     query, reference, query_name, reference_name = parse_alignment_pair(input_path)
+    if swap_roles:
+        query, reference = reference, query
+        query_name, reference_name = reference_name, query_name
     query_annotations = parse_annotation_file(query_annotation_path)
     reference_annotations = parse_annotation_file(reference_annotation_path)
 
@@ -355,6 +377,7 @@ def session_from_payload(payload: Dict[str, object]) -> RenderSession:
         params=params,
         query_annotation_path=_to_optional_path(payload.get("query_annotation_path")),
         reference_annotation_path=_to_optional_path(payload.get("reference_annotation_path")),
+        swap_roles=_to_bool(payload.get("swap_roles"), default=False, name="swap_roles"),
     )
     return session
 
