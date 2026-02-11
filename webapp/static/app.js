@@ -134,13 +134,6 @@ function mapDataXToSvgX(dataX) {
   return m.axes_left_px + ratio * (m.axes_right_px - m.axes_left_px);
 }
 
-function updateScrollReadout() {
-  const viewer = $("viewer");
-  const maxScroll = Math.max(0, viewer.scrollWidth - viewer.clientWidth);
-  const probeText = state.probeGlobalX == null ? "-" : state.probeGlobalX.toFixed(2);
-  $("scroll_readout").textContent = `Scroll: ${viewer.scrollLeft.toFixed(0)} / ${maxScroll.toFixed(0)} | Probe x: ${probeText}`;
-}
-
 function setSelectionSummaryValue(id, value) {
   $(id).textContent = value == null ? "-" : String(value);
 }
@@ -227,7 +220,6 @@ async function fetchProbeAt(xCoord, svgX) {
   state.probeSvgX = Number(svgX);
   updateProbeSummary(data);
   drawProbeLine(svgX);
-  updateScrollReadout();
 }
 
 function queueProbe(xCoord, svgX) {
@@ -557,8 +549,6 @@ function attachProbeInteractions() {
       setStatus(String(err.message || err), true);
     }
   });
-
-  updateScrollReadout();
   renderSelectionVisuals();
 }
 
@@ -698,10 +688,6 @@ function setupFileBrowseButtons() {
 }
 
 function bindEvents() {
-  $("viewer").addEventListener("scroll", () => {
-    updateScrollReadout();
-  });
-
   document.addEventListener("keydown", (evt) => {
     if (evt.key !== "Escape") {
       return;
@@ -779,7 +765,6 @@ function bindEvents() {
 function bootstrap() {
   setupFileBrowseButtons();
   bindEvents();
-  updateScrollReadout();
   updateSelectionSummary();
   updateExtractButtons();
   clearSelectionOutput();
