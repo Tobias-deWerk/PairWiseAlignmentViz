@@ -1,0 +1,245 @@
+Query: Solyc11g010850.2-genomic SL4.0ch11:3,902,537-3,907,133(-) Query ID: lcl|Query_6459105 Length: 4597
+
+
+>Solyc11T000464.1-genomic 11:3,933,764-3,938,705(-)
+Sequence ID: Query_6459107 Length: 4942
+Range 1: 76 to 4662
+
+Score:8004 bits(4334), Expect:0.0, 
+Identities:4528/4614(98%),  Gaps:44/4614(0%), Strand: Plus/Plus
+
+Query  1     ATGGCAGTTTCTTCAGGCACTGTATTTAGAATCAACCAGCACCCAAGTTCTCCATACATG  60
+Sbjct  76    ............................................................  135
+
+Query  61    AAAACTCCAAGATTTTACAACTTCACAAAGAAAAAAGTGAGTAAATAAGATACCCCATTT  120
+Sbjct  136   ............................................................  195
+
+Query  121   GATTTTCTTGAAAAAATTTGTGtttttttCATGTAAAGTTTTGATCTTTTGTGGAATTCT  180
+Sbjct  196   ............................................................  255
+
+Query  181   GGTAAAATTTTCTTATTCCCACATATTTTGGAATGGATTTGTTTGAGtttttttGTAAAG  240
+Sbjct  256   ............................................................  315
+
+Query  241   TTGTGATCTTTTTAAAACTTTTATGATATCTGGTACTGATATATTCTTGTTTTTTCAGTT  300
+Sbjct  316   ............................................................  375
+
+Query  301   TCTTTGTATATGGTTTATGTAAAGTTATAATCTTTTGATATAATCATATCTATTTATCTA  360
+Sbjct  376   ...........-........................C...............C.......  434
+
+Query  361   GAGCTCTTGAAATGTCCCTTTTTCAGTTTCTTGTAAAAGTTTATTTAAAGTTGTGATCTT  420
+Sbjct  435   ............................................................  494
+
+Query  421   TTGTACGATCTGCGTTTTAATTTGTTTGTCTAATTCTGAGTTGATGTGAAGTTTAAGAAG  480
+Sbjct  495   ........C................---------------....................  539
+
+Query  481   GTAAAGAAGAATTTAAATTTTGAATCTTGTGTTGTTAAATAAAAGATACGTAGATTGTAC  540
+Sbjct  540   A.............-----..-..................TT......TA......A...  593
+
+Query  541   CAAAATGTTCTTTAATCTCTAA---CGT---C-T-TTACATGAAAAGTTATAGTTAGATA  592
+Sbjct  594   .....CA...............GGT.T.AAA.A.G........................T  653
+
+Query  593   GTCGTaaaaaaaaaaaGGAAAGTGACAttttttttAAACAGACTAAAAGAAAAAGTAAGA  652
+Sbjct  654   .....--C..............A............-T.-..........G..........  709
+
+Query  653   CGAAC-AGTATTAGCATC-TTGAAGTGTTTTTTGTCTCATTTCTTGTAAAATCTTTTGTA  710
+Sbjct  710   .A...G....G.......T...........C....................A........  769
+
+Query  711   ATGTTATGATCTTTTGTAACCTTTTTGGTATAATCATTTGGTATCTGGAACGCACTAGCC  770
+Sbjct  770   ............................................................  829
+
+Query  771   TCGAC---TAA-A--ATTGATGTTTTTGTTTCAGTTTCTTGTAAAAGCTTCTGTGAATGG  824
+Sbjct  830   .....GAC...T.CTT.......C....................................  889
+
+Query  825   CTCAGATGAAATCAATGGGAAGATAGTAAGAAAGGAAGAAAAAGATAGTTTGCAGATTGA  884
+Sbjct  890   ............................................................  949
+
+Query  885   TTTTTCAGGTGAAAAGCCACCTACACCATTTTTGGATACAATCAATTATCCTAAACATAT  944
+Sbjct  950   ............................................................  1009
+
+Query  945   GAAGAATCTATCAAAAATGGTAAATTCCTTATCAAACAATTAAATATTAAGCCTTTTATC  1004
+Sbjct  1010  ............................................................  1069
+
+Query  1005  GGATTATTTGATCGATATGCAtttttttCGAATAAAAAACAGGATCTTGAACAGTTAGCT  1064
+Sbjct  1070  ............................................................  1129
+
+Query  1065  GCAGAACTAAGAGCAGAGATTGTGTATTCAGTGGCAAAAACCGGAGGTCATTTGAGTTCA  1124
+Sbjct  1130  ............................................................  1189
+
+Query  1125  AGTTTAGGTGTTGTGGATTTAACTGTGGCTTTGCATCATGTTTTTGATACTCCTGAGGAT  1184
+Sbjct  1190  ............................................................  1249
+
+Query  1185  AAAATTATATGGGATGTTGGTCATCAGGTGAATAAATCTTTATTCTTCTTTATTTCCTTG  1244
+Sbjct  1250  ............................................................  1309
+
+Query  1245  AAGAATAGATAGTTTAATATGGAGTTTATGGTCAAAACACACCTGAAGTATCCTGGTTTT  1304
+Sbjct  1310  ............................................................  1369
+
+Query  1305  TGAGCTCCATACCTGAACGATCAGGTATTCGAGTTTCCTACCTGGACTATCACCATATAT  1364
+Sbjct  1370  ............................................................  1429
+
+Query  1365  TTATCGAAACACATCCAACTGTCAATTATTCACTTTTCTTATCCGAAATATCACCACTGT  1424
+Sbjct  1430  ............................................................  1489
+
+Query  1425  TCAGGCAAGAAAACTGACAATTGATAGTTAATGTTTCGATAAACGTTTAGTGATAGTTCA  1484
+Sbjct  1490  .......G....................................................  1549
+
+Query  1485  GGTAGAAAACTCGCACACCTATAGTTCAAGTGTGAAACTTGaaaaaaaCGGAATAGTTTT  1544
+Sbjct  1550  ............................................................  1609
+
+Query  1545  GATGTGTTTTTGACCATTCACTCTTTTATATATATAGTGGAAATTGAAGTGAACaaaaaa  1604
+Sbjct  1610  ............................................................  1669
+
+Query  1605  aaaTTGCAGGCATATGCACACAAAATCTTGACAGGAAGAAGGTCTAAAATGCATACAATG  1664
+Sbjct  1670  ............................................................  1729
+
+Query  1665  AGAAAGACTTCAGGGCTAGCACCTTTTCCTAAAAGGGATGAAAGTGTTCATGATGCATTT  1724
+Sbjct  1730  ............................................................  1789
+
+Query  1725  GGTGCAGGGCATAGTTCAACAAGCATCTCCGCTGGTCTTGGTAATAAATTCAGTTCATGA  1784
+Sbjct  1790  ............................................................  1849
+
+Query  1785  CTTCTTCGCTGCTGTATTTGCTTTACATACTCGAGCTGAGGGTCTATTGGAAACAACCTC  1844
+Sbjct  1850  ....................................C.......................  1909
+
+Query  1845  TCTACCTTCACAAGGTAGGGGTAAGGCTGCGTACACATTACCCTCCCTAGACCTCACTTA  1904
+Sbjct  1910  ............................................................  1969
+
+Query  1905  TGGGATTATACTGGGAAtgttgttgttgttgttgtATAACGGTACAAGTTCAACTGTCAA  1964
+Sbjct  1970  ...........................A................................  2029
+
+Query  1965  AGTATTGTCCGCTCTGGCCTGACTTTTGGGGTCTCGCGGTTCTGTCAGCCGTTTTTTGCA  2024
+Sbjct  2030  ............................................................  2089
+
+Query  2025  TTAAAGGTGATGTGACAGTTGAGTTCTTGATTTGCCTTGTATGGTTCCTAACTTTCCCCT  2084
+Sbjct  2090  ............................................................  2149
+
+Query  2085  CGCGTTCCAATGTGAGATTTTCTCTTCACATTGAACCCCTTTTGAGTTCAGAGATCCGTT  2144
+Sbjct  2150  ............................................................  2209
+
+Query  2145  GATTGTTACATACTTCCATTAGGAGAAAAAGTTGATGAATCCCAAGTACATGATTTGGAG  2204
+Sbjct  2210  ............................................................  2269
+
+Query  2205  TTTGTCTAAGTTAAATGATGTTTTGCAGGCATGGCGGTTGCTCGAGATCTTTTAGGGAAC  2264
+Sbjct  2270  ............................................................  2329
+
+Query  2265  AACAACCATGTCATATCTGTAATTGGAGACGGAGCCATGACTGCAGGACAAGCATACGAG  2324
+Sbjct  2330  ............................................................  2389
+
+Query  2325  GCCATGAATAATGCAGGATTCCTTGACTCGAATCTGATAGTCATATTGAATGATAATAAA  2384
+Sbjct  2390  ............................................................  2449
+
+Query  2385  CAAGTTTCTTTACCGACCGCAACTTTAGATGGCCCTGCAACTCCAGTAGGAGCCCTCAGT  2444
+Sbjct  2450  .......................C....................................  2509
+
+Query  2445  AGTGCCTTAAGCAAACTCCAAGCTAGTCTTAAGTTTAGGCAACTCCGCGAAGCTGCAAAG  2504
+Sbjct  2510  ......................................A.....................  2569
+
+Query  2505  GTAAATCTAGTTCAtttttttCGCATACTTATAGTTGTATTCGAGGATTGAAATGAAGTA  2564
+Sbjct  2570  ............................................................  2629
+
+Query  2565  AAGGTGTTAAAAGTACTTTATTCAATGTGTTTTGTAGACTATAACAAAGCAAATTGGACC  2624
+Sbjct  2630  ............................................................  2689
+
+Query  2625  TCAAGCACATGAAGTTGCAGCTAAAGTTGATGAATATGCAAGGGGAATGCTTAGTGCATC  2684
+Sbjct  2690  ............................................................  2749
+
+Query  2685  TGGTTCCACACTTTTTGAGGAGCTAGGATTATATTACATCGGTCCAGTAGACGGACACAA  2744
+Sbjct  2750  ............................................................  2809
+
+Query  2745  TATCGAAGACTTGATCACTATTTTAGAGAAGGTAAAAGCATTGCCAGCACCAGGACCAGT  2804
+Sbjct  2810  ...T...............................................G........  2869
+
+Query  2805  TCTAATTCACATTGTAACAGAGAAAGGGAAAGGTTATCTTCCTGCAGAAGCAGCAGACGA  2864
+Sbjct  2870  ............................................................  2929
+
+Query  2865  TAAAATGCATGGTAAGGCAATTGGAAATAAGAAGATTACTTGTTTAAAATTTTGAAAAAC  2924
+Sbjct  2930  ............................................................  2989
+
+Query  2925  TGAGATTTTTCGTTTGTGATGTTCAGGGGTGGCACAGTTTGATCCGAAAACAGGAAAGCA  2984
+Sbjct  2990  ............-...............................................  3048
+
+Query  2985  ATTTAAGGCCAAGTCGCCTACGTTGACATATACTCAGTACTTTGCTGAATCACTGATTAA  3044
+Sbjct  3049  ............................................................  3108
+
+Query  3045  AGAAGCCGAAAATGATAACAAGATTGTAGCTATCCATGCTGCAATGGGTGGTGGAACCGG  3104
+Sbjct  3109  ............................................................  3168
+
+Query  3105  CCTCAATTATTTCCAAAAACAATTTCCAGAACGTTGTTTTGACGTTGGCATTGCTGAGCA  3164
+Sbjct  3169  ............................................................  3228
+
+Query  3165  ACATGCAGTTACTTTTGCAGCAGGCTTAGCTACAGAAGGTCTAAAACCATTTTGTGCTAT  3224
+Sbjct  3229  ............................................................  3288
+
+Query  3225  CTACTCCTCGTTCTTACAACGAGGCTACGATCAGGTAACTAACAACATACAAATAGTAAC  3284
+Sbjct  3289  ............................................................  3348
+
+Query  3285  ATTTGAAGCACTCTACAATATAAGTCTTGCATTTTCGGATTGCTGTACTAACATTGCATA  3344
+Sbjct  3349  ............................................................  3408
+
+Query  3345  TTTGTaaaaaaaGGTGGTGCACGATGTGGATCTTCAGAAGTTACCTGTCCGGTTTGCAAT  3404
+Sbjct  3409  ............................................................  3468
+
+Query  3405  GGACCGAGCTGGTTTGGTAGGTGCAGACGGTCCAACGCATTGTGGAGCATTCGATGTGAC  3464
+Sbjct  3469  ............................................................  3528
+
+Query  3465  ATACATGGCTTGTTTGCCAAATATGGTAGTCATGGCTCCATCGGACGAAGCAGAGCTAAT  3524
+Sbjct  3529  ............................................................  3588
+
+Query  3525  GCACATGGTTGCAACAGCAGCAGCTATTGATGATAGGCCTAGTTGTTTCCGATTTCCTAG  3584
+Sbjct  3589  ............................................................  3648
+
+Query  3585  AGGAAATGGAATTGGTGCAATTCTTCCTCTAAACAATAAAGGCATACCAATTGAGGTAAC  3644
+Sbjct  3649  ............................................................  3708
+
+Query  3645  TTAAAAGTCTGTTTGAACACTTGATGTTTTATCAGCTAATCCAAACGGACTCTAAATTAC  3704
+Sbjct  3709  ............................................................  3768
+
+Query  3705  ATTGGCCTTTTTGTCTATGTTGTAACATCAACAGGTCGGTAAAGGAAGAATACTGAGAGA  3764
+Sbjct  3769  ............................................................  3828
+
+Query  3765  AGGTGAAAGAGTTGCCATTTTGGGATATGGTTCGATAATACAACAATGTTTGGGAGCTGC  3824
+Sbjct  3829  ............................................................  3888
+
+Query  3825  AGACATCCTAAACTCCCATGACATAAGAGTAACAGTAGCTGATGCTAGGTTCTGCAAACC  3884
+Sbjct  3889  ............................................................  3948
+
+Query  3885  ATTGGATGCTGATCTTATTAGGAGTTTAGCCAAAGAACATGAAATCTTGATCACTGTCGA  3944
+Sbjct  3949  ............................................................  4008
+
+Query  3945  AGAAGGATCAATCGGAGGATTTGGCTCACACGTGTCTCATTTCTTAAGCCTAAACAGCAT  4004
+Sbjct  4009  ............................................................  4068
+
+Query  4005  TTTGGACGGACCCCTTAAGGTAAAAATCACTAACAAATCTGTAGTTGGAACGACAAAAGT  4064
+Sbjct  4069  ................................................T...........  4128
+
+Query  4065  CATTTTTCAAGAAAATATTTTTTAAGCTATGTTGTGTGGATTCTCTAGCCGAGCGTCTTT  4124
+Sbjct  4129  ............................................................  4188
+
+Query  4125  CAGAAACCTCCACGATGTAGGGGTAACATTGGATATGCTATTTTATGTGGACTCATCAAA  4184
+Sbjct  4189  .CA.........................................................  4248
+
+Query  4185  AATGTTGTTGCCTCGTGCCAGATCCTCCAAAAATGCTCTACTTCCGGAGGATCCAACAAG  4244
+Sbjct  4249  .C..........................................................  4308
+
+Query  4245  CACTTAACAATGTTAAACATGACATTCTCCTTTTAAACAGATCAAAAAGGAAAGTAATTA  4304
+Sbjct  4309  ............................................................  4368
+
+Query  4305  AGACACAAAATAAAATCGTAAGAAACATTTTCTATGTCTATGGAAAATGACTTCCGTCAT  4364
+Sbjct  4369  ......G..............A.........T.C..........................  4428
+
+Query  4365  ATCAAACATGTTCAAAAATTATAAATTATTGATTTATTTCCA-ttttttttcaataattt  4423
+Sbjct  4429  .C.......................................CT.............T...  4488
+
+Query  4424  taatttttaaaccttgactttttGCAGTTGAGGTCAATGTTACTTCCAGATAGATACATT  4483
+Sbjct  4489  .................T..........................................  4548
+
+Query  4484  GATCATGGTTCACCAGTTGATCAAATTGAAGCAGCTGGTTTATCATCAAGACATATTTCT  4543
+Sbjct  4549  ............................................................  4608
+
+Query  4544  TCTACAGTTCTAACATTATTGGGAAGGCCAAAAGAAGCTATGGTAGTAAACTAA  4597
+Sbjct  4609  ......................................................  4662
+
+
+
+
+

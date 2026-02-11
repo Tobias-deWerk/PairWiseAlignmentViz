@@ -57,7 +57,9 @@ per-stream coordinates, local nucleotide positions, feature flags, and (when
 applicable) the gap run length. This makes it straightforward to audit how the
 gap glyphs were positioned if you need to refine their presentation.
 
-The script accepts any pairwise alignment FASTA that contains exactly two sequences of equal length (including gap characters) such as MAFFT pairwise outputs.
+The script accepts:
+- Pairwise alignment FASTA containing exactly two sequences of equal length (including gap characters), such as MAFFT pairwise outputs.
+- Standard BLAST pairwise text output (`Query`/`Sbjct` rows). For BLAST files, the top-scoring HSP (`Score: ... bits(...)`) is selected, and `.` shorthand in `Sbjct` rows is expanded to the corresponding `Query` base.
 
 ## Browser UI (Flask)
 
@@ -72,6 +74,8 @@ python -m webapp.app
 Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
 The browser app expects file paths on the same machine as the Flask process. The browse buttons help with file-name selection, but due to browser sandbox rules you should paste full absolute paths for loading.
+
+Alignment input can be either two-sequence aligned FASTA or standard BLAST pairwise output. BLAST parsing expects `Query`/`Sbjct` alignment rows and uses the highest-bit-score HSP when multiple HSP blocks are present.
 
 ## Gene annotations
 
