@@ -33,20 +33,14 @@ body {
   gap: 12px;
 }
 
-.top-row,
-.controls-row {
+.controls-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr) minmax(220px, 0.7fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.05fr) minmax(340px, 1.25fr);
+  align-items: start;
 }
 
-.controls-row {
-  grid-template-columns: minmax(240px, 0.75fr);
-  justify-content: end;
-}
-
-.top-row > *,
-.controls-row > *,
+.controls-grid > *,
 .viewer-wrap,
 .panel,
 .viewer {
@@ -63,6 +57,12 @@ body {
 
 .panel.compact {
   align-self: start;
+}
+
+.panel-data,
+.panel-probe,
+.panel-params {
+  height: fit-content;
 }
 
 .panel h2 {
@@ -142,6 +142,10 @@ button:disabled {
 
 .actions {
   margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 details {
@@ -168,8 +172,8 @@ details summary {
 }
 
 .viewer {
-  min-height: 380px;
-  max-height: 68vh;
+  min-height: 420px;
+  max-height: 72vh;
   width: 100%;
   overflow-x: auto;
   overflow-y: auto;
@@ -228,11 +232,49 @@ details summary {
   margin-top: 6px;
 }
 
+.export-title {
+  margin-top: 10px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1320px) {
+  .controls-grid {
+    grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.2fr);
+  }
+
+  .panel-data {
+    grid-column: 1;
+  }
+
+  .panel-probe {
+    grid-column: 2;
+  }
+
+  .panel-params {
+    grid-column: 1 / span 2;
+  }
+}
+
 @media (max-width: 1120px) {
-  .top-row,
-  .controls-row,
+  .controls-grid,
   .grid.three,
   .grid.two {
     grid-template-columns: 1fr;
+  }
+
+  .panel-data,
+  .panel-probe,
+  .panel-params {
+    grid-column: auto;
+  }
+
+  .viewer {
+    min-height: 320px;
+    max-height: 62vh;
   }
 }
