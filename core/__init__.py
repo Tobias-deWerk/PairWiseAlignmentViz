@@ -4,6 +4,7 @@ from .params import RenderParams
 from .service import (
     RenderSession,
     RenderResult,
+    extract_sequence_range,
     export_alignment,
     prepare_session,
     probe_alignment,
@@ -18,4 +19,5 @@ __all__ = [
     "render_alignment",
     "export_alignment",
     "probe_alignment",
+    "extract_sequence_range",
 ]

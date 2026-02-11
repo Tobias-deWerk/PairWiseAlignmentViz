@@ -8,8 +8,13 @@
   </head>
   <body>
     <div class="page">
-      <header class="top-row">
-        <section class="panel">
+      <section class="viewer-wrap">
+        <h2>Alignment Visualization Output</h2>
+        <div id="viewer" class="viewer"></div>
+      </section>
+
+      <section class="controls-grid">
+        <section class="panel compact panel-data">
           <h2>Data Selection</h2>
           <label>Choose alignment FASTA
             <div class="path-row">
@@ -31,7 +36,34 @@
           </label>
         </section>
 
-        <section class="panel">
+        <section class="panel compact panel-probe" id="probe_summary">
+          <h2>Base Pair Probe</h2>
+          <div>Reference base: <strong id="probe_ref_base">-</strong></div>
+          <div>Query base: <strong id="probe_query_base">-</strong></div>
+          <div>Reference local: <span id="probe_ref_pos">-</span></div>
+          <div>Query local: <span id="probe_query_pos">-</span></div>
+          <div>Column index: <span id="probe_idx">-</span></div>
+          <div>Flags: <span id="probe_flags">-</span></div>
+          <hr class="probe-divider" />
+          <h3>Selection</h3>
+          <div>Start column: <span id="sel_start_col">-</span></div>
+          <div>End column: <span id="sel_end_col">-</span></div>
+          <div>Start x: <span id="sel_start_x">-</span></div>
+          <div>End x: <span id="sel_end_x">-</span></div>
+          <div>Query local: <span id="sel_query_local">-</span></div>
+          <div>Reference local: <span id="sel_reference_local">-</span></div>
+          <div>Span (columns): <span id="sel_span">-</span></div>
+          <div class="selection-actions">
+            <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
+            <button id="extract_reference_btn" type="button" disabled>Extract Reference Sequence</button>
+            <button id="clear_selection_btn" type="button">Clear Selection</button>
+          </div>
+          <label class="output-label" for="extract_output">Extract Output</label>
+          <textarea id="extract_output" readonly rows="7" placeholder="FASTA output appears here."></textarea>
+          <button id="copy_extract_btn" type="button" disabled>Copy Output</button>
+        </section>
+
+        <section class="panel compact panel-params">
           <h2>User Input Parameters</h2>
           <div class="grid two">
             <label>Width
@@ -78,40 +110,14 @@
           <div class="actions">
             <button id="render_btn" type="button">Render</button>
           </div>
-        </section>
 
-        <section class="panel compact" id="probe_summary">
-          <h2>Base Pair Probe</h2>
-          <div>Reference base: <strong id="probe_ref_base">-</strong></div>
-          <div>Query base: <strong id="probe_query_base">-</strong></div>
-          <div>Reference local: <span id="probe_ref_pos">-</span></div>
-          <div>Query local: <span id="probe_query_pos">-</span></div>
-          <div>Column index: <span id="probe_idx">-</span></div>
-          <div>Flags: <span id="probe_flags">-</span></div>
-        </section>
-      </header>
-
-      <section class="viewer-wrap">
-        <h2>Alignment Visualization Output</h2>
-        <div id="viewer" class="viewer"></div>
-      </section>
-
-      <section class="controls-row">
-        <div class="panel wide">
-          <h2>Scroll / Probe</h2>
-          <p class="helper">
-            The full-width SVG is rendered at native scale. Scroll horizontally in the viewer.
-            Move the mouse across the SVG to probe coordinates; click to lock/unlock the probe.
-          </p>
-          <div id="scroll_readout" class="readout">Scroll: - | Probe x: -</div>
-        </div>
-
-        <div class="panel compact">
-          <h2>Export Figure</h2>
-          <button id="export_svg" type="button">Download SVG</button>
-          <button id="export_png" type="button">Download PNG</button>
+          <h3 class="export-title">Export Figure</h3>
+          <div class="export-actions">
+            <button id="export_svg" type="button">Download SVG</button>
+            <button id="export_png" type="button">Download PNG</button>
+          </div>
           <pre id="status"></pre>
-        </div>
+        </section>
       </section>
     </div>
 
