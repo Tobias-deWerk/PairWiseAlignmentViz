@@ -1,0 +1,17 @@
+Query: MultiHspQuery
+Query ID: lcl|Query_multi Length: 10
+
+>MultiHspReference
+Sequence ID: Subject_multi Length: 10
+
+Score: 10 bits(5), Expect: 0.1
+Identities: 4/4(100%), Gaps: 0/4(0%), Strand: Plus/Plus
+
+Query  1   AAAA  4
+Sbjct  1   ....  4
+
+Score: 50 bits(27), Expect: 1e-08
+Identities: 3/4(75%), Gaps: 0/4(0%), Strand: Plus/Plus
+
+Query  1   CCCC  4
+Sbjct  1   T...  4

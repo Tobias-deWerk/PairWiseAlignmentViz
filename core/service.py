@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 from .compute import compute_alignment_data, construct_stream_paths
-from .inputs import parse_annotation_file, parse_fasta_pair
+from .inputs import parse_alignment_pair, parse_annotation_file
 from .params import RenderParams
 from .render import (
     plot_alignment,
@@ -78,7 +78,7 @@ def prepare_session(
     query_annotation_path: Optional[Path] = None,
     reference_annotation_path: Optional[Path] = None,
 ) -> RenderSession:
-    query, reference, query_name, reference_name = parse_fasta_pair(input_path)
+    query, reference, query_name, reference_name = parse_alignment_pair(input_path)
     query_annotations = parse_annotation_file(query_annotation_path)
     reference_annotations = parse_annotation_file(reference_annotation_path)
 

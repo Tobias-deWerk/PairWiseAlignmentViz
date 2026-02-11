@@ -1,0 +1,10 @@
+Query: InvalidBlast
+Query ID: lcl|Query_bad Length: 4
+
+>InvalidReference
+Sequence ID: Subject_bad Length: 4
+
+Score: 25 bits(13), Expect: 3e-04
+Identities: 3/4(75%), Gaps: 0/4(0%), Strand: Plus/Plus
+
+Query  1   ACGT  4

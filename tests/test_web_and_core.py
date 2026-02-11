@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib
 
 from core.mpl_backend import configure_headless_matplotlib
+from core.inputs import parse_alignment_pair
 from core.params import RenderParams
 from core.service import prepare_session, probe_alignment, render_alignment
 from webapp.app import app
@@ -15,6 +16,9 @@ from webapp.app import app
 ROOT = Path(__file__).resolve().parents[1]
 ALIGN = ROOT / "test_alignment.fa"
 REF_ANNOT = ROOT / "test_ref_annotation.txt"
+BLAST_ALIGN = ROOT / "tests" / "fixtures" / "blast_pairwise_standard.txt"
+BLAST_MULTI_HSP = ROOT / "tests" / "fixtures" / "blast_pairwise_multi_hsp.txt"
+BLAST_INVALID = ROOT / "tests" / "fixtures" / "blast_pairwise_invalid.txt"
 
 
 class CoreTests(unittest.TestCase):
@@ -77,6 +81,26 @@ class CoreTests(unittest.TestCase):
         self.assertIsNone(outcome["error"], f"thread render failed: {outcome['error']}")
         self.assertTrue(outcome["ok"])
 
+    def test_parse_alignment_pair_fasta_still_supported(self):
+        query, reference, query_name, reference_name = parse_alignment_pair(ALIGN)
+        self.assertEqual(len(query), len(reference))
+        self.assertTrue(query_name)
+        self.assertTrue(reference_name)
+
+    def test_parse_alignment_pair_blast_dot_identity_expansion(self):
+        query, reference, query_name, reference_name = parse_alignment_pair(BLAST_ALIGN)
+        self.assertEqual(len(query), len(reference))
+        self.assertNotIn(".", reference)
+        self.assertIn("-", query)
+        self.assertIn("-", reference)
+        self.assertEqual(query_name, "ExampleQuery")
+        self.assertEqual(reference_name, "ExampleReference")
+
+    def test_blast_multi_hsp_uses_top_score(self):
+        query, reference, _, _ = parse_alignment_pair(BLAST_MULTI_HSP)
+        self.assertEqual(query, "CCCC")
+        self.assertEqual(reference, "TCCC")
+
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
@@ -111,6 +135,33 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(export_resp.status_code, 200)
         self.assertIn("image/svg+xml", export_resp.headers["Content-Type"])
+
+    def test_api_render_accepts_blast_input(self):
+        payload = {
+            "input_path": str(BLAST_ALIGN),
+            "reference_annotation_path": "",
+            "query_annotation_path": "",
+            "params": {"width": "auto", "height": 6.0, "dpi": 100},
+        }
+
+        render_resp = self.client.post("/api/render", json=payload)
+        self.assertEqual(render_resp.status_code, 200)
+        render_json = render_resp.get_json()
+        self.assertIn("<svg", render_json["svg"])
+        self.assertEqual(render_json["query_name"], "ExampleQuery")
+        self.assertEqual(render_json["reference_name"], "ExampleReference")
+
+    def test_blast_invalid_format_errors_cleanly(self):
+        payload = {
+            "input_path": str(BLAST_INVALID),
+            "reference_annotation_path": "",
+            "query_annotation_path": "",
+            "params": {"width": "auto", "height": 6.0, "dpi": 100},
+        }
+        render_resp = self.client.post("/api/render", json=payload)
+        self.assertEqual(render_resp.status_code, 400)
+        body = render_resp.get_json()
+        self.assertIn("BLAST", body["error"])
 
 
 if __name__ == "__main__":
