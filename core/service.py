@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import wrap
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -222,19 +223,86 @@ def export_alignment(
     )
 
 
-def probe_alignment(session: RenderSession, x_coord: float) -> Dict[str, object]:
+def _nearest_column_index(session: RenderSession, x_coord: float) -> int:
     if session.global_x.size == 0:
         raise ValueError("No alignment coordinates are available")
 
     idx = int(np.searchsorted(session.global_x, x_coord, side="left"))
     if idx <= 0:
-        nearest_idx = 0
-    elif idx >= len(session.global_x):
-        nearest_idx = len(session.global_x) - 1
+        return 0
+    if idx >= len(session.global_x):
+        return len(session.global_x) - 1
+
+    left = idx - 1
+    right = idx
+    return left if abs(session.global_x[left] - x_coord) <= abs(session.global_x[right] - x_coord) else right
+
+
+def extract_sequence_range(
+    session: RenderSession,
+    start_x: float,
+    end_x: float,
+    stream: str,
+) -> Dict[str, object]:
+    stream_key = str(stream).strip().lower()
+    if stream_key not in {"query", "reference"}:
+        raise ValueError("stream must be 'query' or 'reference'")
+
+    start_idx = _nearest_column_index(session, float(start_x))
+    end_idx = _nearest_column_index(session, float(end_x))
+    if end_idx < start_idx:
+        start_idx, end_idx = end_idx, start_idx
+
+    if stream_key == "query":
+        stream_seq = session.data.query
+        stream_name = session.data.query_name or "Query"
+        is_gap = session.data.is_query_gap
+        local_positions = session.data.query_local_positions
     else:
-        left = idx - 1
-        right = idx
-        nearest_idx = left if abs(session.global_x[left] - x_coord) <= abs(session.global_x[right] - x_coord) else right
+        stream_seq = session.data.reference
+        stream_name = session.data.reference_name or "Reference"
+        is_gap = session.data.is_reference_gap
+        local_positions = session.data.reference_local_positions
+
+    segment = stream_seq[start_idx : end_idx + 1]
+    sequence = segment.replace("-", "")
+
+    local_non_gap = [int(local_positions[idx]) for idx in range(start_idx, end_idx + 1) if not is_gap[idx]]
+    if local_non_gap:
+        start_local = local_non_gap[0]
+        end_local = local_non_gap[-1]
+        local_text = f"{start_local}-{end_local}"
+    else:
+        start_local = None
+        end_local = None
+        local_text = "NA-NA"
+
+    start_global = float(session.global_x[start_idx])
+    end_global = float(session.global_x[end_idx])
+    header = (
+        f">{stream_name} selected_region columns={start_idx + 1}-{end_idx + 1} "
+        f"global_x={start_global:.2f}-{end_global:.2f} local={local_text}"
+    )
+
+    wrapped = wrap(sequence, width=80)
+    fasta = header if not wrapped else "\n".join([header, *wrapped])
+
+    return {
+        "stream": stream_key,
+        "start_column_index": start_idx,
+        "end_column_index": end_idx,
+        "start_global_x": start_global,
+        "end_global_x": end_global,
+        "start_local_position": start_local,
+        "end_local_position": end_local,
+        "sequence_length": len(sequence),
+        "sequence": sequence,
+        "fasta": fasta,
+    }
+
+
+def probe_alignment(session: RenderSession, x_coord: float) -> Dict[str, object]:
+    nearest_idx = _nearest_column_index(session, x_coord)
 
     q_base = session.data.query[nearest_idx]
     r_base = session.data.reference[nearest_idx]

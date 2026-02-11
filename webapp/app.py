@@ -6,6 +6,7 @@ from flask import Flask, jsonify, make_response, request, send_from_directory
 
 from core.mpl_backend import configure_headless_matplotlib
 from core.service import (
+    extract_sequence_range,
     export_alignment,
     get_session,
     probe_alignment,
@@ -94,6 +95,37 @@ def api_export():
     response.headers["Content-Type"] = mime
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
+
+
+@app.post("/api/extract_sequence")
+def api_extract_sequence():
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    stream = str(payload.get("stream", "")).strip().lower()
+    start_x = payload.get("start_x")
+    end_x = payload.get("end_x")
+
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    if stream not in {"query", "reference"}:
+        return jsonify({"error": "stream must be 'query' or 'reference'"}), 400
+    if start_x is None:
+        return jsonify({"error": "start_x is required"}), 400
+    if end_x is None:
+        return jsonify({"error": "end_x is required"}), 400
+
+    try:
+        session = get_session(token)
+        result = extract_sequence_range(
+            session,
+            start_x=float(start_x),
+            end_x=float(end_x),
+            stream=stream,
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(result)
 
 
 if __name__ == "__main__":

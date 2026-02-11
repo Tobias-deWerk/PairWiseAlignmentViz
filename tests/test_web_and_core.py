@@ -9,7 +9,7 @@ import matplotlib
 from core.mpl_backend import configure_headless_matplotlib
 from core.inputs import parse_alignment_pair
 from core.params import RenderParams
-from core.service import prepare_session, probe_alignment, render_alignment
+from core.service import extract_sequence_range, prepare_session, probe_alignment, render_alignment
 from webapp.app import app
 
 
@@ -101,6 +101,48 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(query, "CCCC")
         self.assertEqual(reference, "TCCC")
 
+    def test_extract_sequence_range_normalizes_reversed_bounds(self):
+        session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+        )
+        left_idx = 200
+        right_idx = 320
+        result = extract_sequence_range(
+            session,
+            start_x=float(session.global_x[right_idx]),
+            end_x=float(session.global_x[left_idx]),
+            stream="query",
+        )
+        expected = session.data.query[left_idx : right_idx + 1].replace("-", "")
+        self.assertEqual(result["start_column_index"], left_idx)
+        self.assertEqual(result["end_column_index"], right_idx)
+        self.assertEqual(result["sequence"], expected)
+        self.assertEqual(result["sequence_length"], len(expected))
+        self.assertIn(">SL4_qPV11 selected_region", result["fasta"])
+
+    def test_extract_sequence_range_all_gap_returns_none_locals(self):
+        session = prepare_session(
+            input_path=ALIGN,
+            params=RenderParams(),
+            reference_annotation_path=REF_ANNOT,
+        )
+        first_non_gap_idx = next(
+            idx for idx, is_gap in enumerate(session.data.is_reference_gap) if not is_gap
+        )
+        result = extract_sequence_range(
+            session,
+            start_x=float(session.global_x[0]),
+            end_x=float(session.global_x[first_non_gap_idx - 1]),
+            stream="reference",
+        )
+        self.assertEqual(result["sequence"], "")
+        self.assertEqual(result["sequence_length"], 0)
+        self.assertIsNone(result["start_local_position"])
+        self.assertIsNone(result["end_local_position"])
+        self.assertIn("local=NA-NA", result["fasta"])
+
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
@@ -128,6 +170,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(probe_resp.status_code, 200)
         probe_json = probe_resp.get_json()
         self.assertIn("column_index", probe_json)
+        self.assertIn("query_base", probe_json)
+        self.assertIn("reference_base", probe_json)
 
         export_resp = self.client.post(
             "/api/export",
@@ -135,6 +179,24 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(export_resp.status_code, 200)
         self.assertIn("image/svg+xml", export_resp.headers["Content-Type"])
+
+        extract_query = self.client.post(
+            "/api/extract_sequence",
+            json={"token": token, "stream": "query", "start_x": 100.0, "end_x": 300.0},
+        )
+        self.assertEqual(extract_query.status_code, 200)
+        extract_query_json = extract_query.get_json()
+        self.assertEqual(extract_query_json["stream"], "query")
+        self.assertIn("fasta", extract_query_json)
+
+        extract_reference = self.client.post(
+            "/api/extract_sequence",
+            json={"token": token, "stream": "reference", "start_x": 100.0, "end_x": 300.0},
+        )
+        self.assertEqual(extract_reference.status_code, 200)
+        extract_reference_json = extract_reference.get_json()
+        self.assertEqual(extract_reference_json["stream"], "reference")
+        self.assertIn("sequence_length", extract_reference_json)
 
     def test_api_render_accepts_blast_input(self):
         payload = {
@@ -162,6 +224,44 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(render_resp.status_code, 400)
         body = render_resp.get_json()
         self.assertIn("BLAST", body["error"])
+
+    def test_extract_sequence_validation_errors(self):
+        missing_token_resp = self.client.post(
+            "/api/extract_sequence",
+            json={"stream": "query", "start_x": 1.0, "end_x": 2.0},
+        )
+        self.assertEqual(missing_token_resp.status_code, 400)
+        self.assertIn("token is required", missing_token_resp.get_json()["error"])
+
+        payload = {
+            "input_path": str(ALIGN),
+            "reference_annotation_path": str(REF_ANNOT),
+            "query_annotation_path": "",
+            "params": {"width": "auto", "height": 6.0, "dpi": 100},
+        }
+        render_resp = self.client.post("/api/render", json=payload)
+        token = render_resp.get_json()["token"]
+
+        invalid_stream_resp = self.client.post(
+            "/api/extract_sequence",
+            json={"token": token, "stream": "invalid", "start_x": 1.0, "end_x": 2.0},
+        )
+        self.assertEqual(invalid_stream_resp.status_code, 400)
+        self.assertIn("stream must be", invalid_stream_resp.get_json()["error"])
+
+        missing_start_resp = self.client.post(
+            "/api/extract_sequence",
+            json={"token": token, "stream": "query", "end_x": 2.0},
+        )
+        self.assertEqual(missing_start_resp.status_code, 400)
+        self.assertIn("start_x is required", missing_start_resp.get_json()["error"])
+
+        missing_end_resp = self.client.post(
+            "/api/extract_sequence",
+            json={"token": token, "stream": "query", "start_x": 1.0},
+        )
+        self.assertEqual(missing_end_resp.status_code, 400)
+        self.assertIn("end_x is required", missing_end_resp.get_json()["error"])
 
 
 if __name__ == "__main__":

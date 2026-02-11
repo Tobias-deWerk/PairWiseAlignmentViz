@@ -88,6 +88,23 @@
           <div>Query local: <span id="probe_query_pos">-</span></div>
           <div>Column index: <span id="probe_idx">-</span></div>
           <div>Flags: <span id="probe_flags">-</span></div>
+          <hr class="probe-divider" />
+          <h3>Selection</h3>
+          <div>Start column: <span id="sel_start_col">-</span></div>
+          <div>End column: <span id="sel_end_col">-</span></div>
+          <div>Start x: <span id="sel_start_x">-</span></div>
+          <div>End x: <span id="sel_end_x">-</span></div>
+          <div>Query local: <span id="sel_query_local">-</span></div>
+          <div>Reference local: <span id="sel_reference_local">-</span></div>
+          <div>Span (columns): <span id="sel_span">-</span></div>
+          <div class="selection-actions">
+            <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
+            <button id="extract_reference_btn" type="button" disabled>Extract Reference Sequence</button>
+            <button id="clear_selection_btn" type="button">Clear Selection</button>
+          </div>
+          <label class="output-label" for="extract_output">Extract Output</label>
+          <textarea id="extract_output" readonly rows="7" placeholder="FASTA output appears here."></textarea>
+          <button id="copy_extract_btn" type="button" disabled>Copy Output</button>
         </section>
       </header>
 
@@ -101,7 +118,7 @@
           <h2>Scroll / Probe</h2>
           <p class="helper">
             The full-width SVG is rendered at native scale. Scroll horizontally in the viewer.
-            Move the mouse across the SVG to probe coordinates; click to lock/unlock the probe.
+            Move the mouse across the SVG to probe coordinates; drag or click twice to select a range.
           </p>
           <div id="scroll_readout" class="readout">Scroll: - | Probe x: -</div>
         </div>
