@@ -8,6 +8,15 @@
   </head>
   <body>
     <div class="page">
+      <header class="app-header">
+        <div class="app-title-wrap">
+          <h1>PairWiseAlignmentViz</h1>
+          <p>Interactive pairwise alignment exploration and sequence extraction.</p>
+        </div>
+      </header>
+
+      <div class="brand-watermark" aria-hidden="true"></div>
+
       <section class="viewer-wrap">
         <h2>Alignment Visualization Output</h2>
         <div id="viewer" class="viewer"></div>
@@ -123,6 +132,10 @@
           <pre id="status"></pre>
         </section>
       </section>
+
+      <footer class="app-disclaimer">
+        Built by Tobias de Werk <span aria-hidden="true">•</span> Powered by OpenAI Codex
+      </footer>
     </div>
 
     <input id="file_picker" type="file" hidden />
