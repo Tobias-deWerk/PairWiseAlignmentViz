@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="220" viewBox="0 0 900 220" role="img" aria-label="Radboud Universiteit watermark">
+  <defs>
+    <style>
+      .wordmark { font-family: "Georgia", "Times New Roman", serif; font-size: 96px; font-weight: 700; fill: #c5192d; }
+      .crest-ring { fill: none; stroke: #21303f; stroke-width: 8; opacity: 0.45; }
+      .crest-inner { fill: #21303f; opacity: 0.4; }
+      .crest-text { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; font-size: 52px; font-weight: 700; fill: #21303f; opacity: 0.45; }
+    </style>
+  </defs>
+
+  <text class="wordmark" x="8" y="148">Radboud Universiteit</text>
+  <circle class="crest-ring" cx="810" cy="112" r="76" />
+  <path class="crest-inner" d="M810 44 L852 62 L852 108 C852 141 835 168 810 182 C785 168 768 141 768 108 L768 62 Z"/>
+  <text class="crest-text" x="786" y="128">RU</text>
+</svg>

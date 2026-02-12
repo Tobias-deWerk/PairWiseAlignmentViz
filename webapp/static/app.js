@@ -50,7 +50,7 @@ function $(id) {
 function setStatus(text, isError = false) {
   const node = $("status");
   node.textContent = text;
-  node.style.color = isError ? "#ffd9d9" : "#ecf3f7";
+  node.style.color = isError ? "#9a1328" : "#243a4c";
 }
 
 function readParams() {
