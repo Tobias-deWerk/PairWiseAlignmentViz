@@ -50,22 +50,12 @@
         </section>
 
         <section class="panel compact panel-probe" id="probe_summary">
-          <h2>Base Pair Probe</h2>
+          <h2>Position</h2>
           <div>Reference base: <strong id="probe_ref_base">-</strong></div>
           <div>Query base: <strong id="probe_query_base">-</strong></div>
           <div>Reference local: <span id="probe_ref_pos">-</span></div>
           <div>Query local: <span id="probe_query_pos">-</span></div>
-          <div>Column index: <span id="probe_idx">-</span></div>
-          <div>Flags: <span id="probe_flags">-</span></div>
           <hr class="probe-divider" />
-          <h3>Selection</h3>
-          <div>Start column: <span id="sel_start_col">-</span></div>
-          <div>End column: <span id="sel_end_col">-</span></div>
-          <div>Start x: <span id="sel_start_x">-</span></div>
-          <div>End x: <span id="sel_end_x">-</span></div>
-          <div>Query local: <span id="sel_query_local">-</span></div>
-          <div>Reference local: <span id="sel_reference_local">-</span></div>
-          <div>Span (columns): <span id="sel_span">-</span></div>
           <div class="selection-actions">
             <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
             <button id="extract_reference_btn" type="button" disabled>Extract Reference Sequence</button>
@@ -79,6 +69,13 @@
         <section class="panel compact panel-params">
           <h2>User Input Parameters</h2>
           <div class="grid two">
+            <label>Render preset
+              <select id="render_preset">
+                <option value="auto">Auto (by sequence length)</option>
+                <option value="short_lt_5000">Short alignment (&lt; 5,000 bases)</option>
+                <option value="long_ge_5000">Long alignment (&gt;= 5,000 bases / current defaults)</option>
+              </select>
+            </label>
             <label>Width
               <input id="width" type="text" value="auto" />
             </label>
@@ -92,6 +89,7 @@
               <input id="tick_interval" type="number" step="1" value="10000" />
             </label>
           </div>
+          <p class="preset-helper" id="preset_helper">Preset: Auto (resolve on render)</p>
 
           <details>
             <summary>Advanced Parameters</summary>

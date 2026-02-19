@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import matplotlib
 
@@ -225,6 +226,17 @@ class ApiTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
+    def _write_temp_alignment(self, length: int) -> Path:
+        with NamedTemporaryFile("w", suffix=".fa", delete=False) as handle:
+            query = "A" * length
+            reference = "A" * length
+            handle.write(">q\n")
+            handle.write(query)
+            handle.write("\n>r\n")
+            handle.write(reference)
+            handle.write("\n")
+            return Path(handle.name)
+
     def test_render_probe_export(self):
         payload = {
             "input_path": str(ALIGN),
@@ -389,6 +401,47 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(swapped_query_json["sequence"], default_reference_json["sequence"])
         self.assertEqual(swapped_query_json["stream"], "query")
+
+    def test_preset_recommendation_short_for_small_input(self):
+        alignment_path = self._write_temp_alignment(200)
+        self.addCleanup(lambda: alignment_path.unlink(missing_ok=True))
+
+        resp = self.client.post(
+            "/api/preset_recommendation",
+            json={"input_path": str(alignment_path)},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["recommended_preset"], "short_lt_5000")
+        self.assertEqual(data["basis_length"], 200)
+        self.assertEqual(data["threshold"], 5000)
+
+    def test_preset_recommendation_long_for_large_input(self):
+        alignment_path = self._write_temp_alignment(6000)
+        self.addCleanup(lambda: alignment_path.unlink(missing_ok=True))
+
+        resp = self.client.post(
+            "/api/preset_recommendation",
+            json={"input_path": str(alignment_path)},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["recommended_preset"], "long_ge_5000")
+        self.assertEqual(data["basis_length"], 6000)
+        self.assertEqual(data["threshold"], 5000)
+
+    def test_preset_recommendation_requires_input_path(self):
+        resp = self.client.post("/api/preset_recommendation", json={})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("input_path is required", resp.get_json()["error"])
+
+    def test_preset_recommendation_invalid_file_returns_400(self):
+        resp = self.client.post(
+            "/api/preset_recommendation",
+            json={"input_path": str(ROOT / "tests" / "fixtures" / "does_not_exist.fa")},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("No such file", resp.get_json()["error"])
 
 
 if __name__ == "__main__":

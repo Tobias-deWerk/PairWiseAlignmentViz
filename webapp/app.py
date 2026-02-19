@@ -10,6 +10,7 @@ from core.service import (
     export_alignment,
     get_session,
     probe_alignment,
+    recommend_render_preset,
     render_alignment,
     session_from_payload,
 )
@@ -20,6 +21,24 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
+
+
+def _to_bool(value: object, *, default: bool = False, name: str = "value") -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return bool(value)
+        raise ValueError(f"{name} must be a boolean")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    raise ValueError(f"{name} must be a boolean")
 
 
 @app.get("/")
@@ -51,6 +70,24 @@ def api_render():
             "reference_name": session.data.reference_name,
         }
     )
+
+
+@app.post("/api/preset_recommendation")
+def api_preset_recommendation():
+    payload = request.get_json(silent=True) or {}
+    input_text = str(payload.get("input_path", "")).strip()
+    if not input_text:
+        return jsonify({"error": "input_path is required"}), 400
+
+    try:
+        recommendation = recommend_render_preset(
+            input_path=Path(input_text),
+            swap_roles=_to_bool(payload.get("swap_roles"), default=False, name="swap_roles"),
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(recommendation)
 
 
 @app.post("/api/probe")
