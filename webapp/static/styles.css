@@ -149,6 +149,7 @@ textarea {
 
 input[type="text"],
 input[type="number"],
+select,
 #extract_output {
   width: 100%;
   border: 1px solid var(--border-strong);
@@ -166,6 +167,7 @@ input[type="range"] {
 
 input[type="text"]:focus-visible,
 input[type="number"]:focus-visible,
+select:focus-visible,
 #extract_output:focus-visible,
 button:focus-visible,
 summary:focus-visible {
@@ -247,6 +249,12 @@ button:disabled {
   gap: 7px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.preset-helper {
+  margin: 4px 0 6px;
+  color: #455a6d;
+  font-size: 0.78rem;
 }
 
 details {

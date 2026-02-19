@@ -43,6 +43,44 @@ const paramIds = [
   "annotation_spacing",
 ];
 
+const PRESET_VALUES = Object.freeze({
+  short_lt_5000: Object.freeze({
+    width: "15",
+    height: "4",
+    min_gap_size: "1",
+    block_size: "50",
+    min_sequence_identity: "0.3",
+    backbone_gap: "0.2",
+    bump_scale: "0.1",
+    gap_max_height: "4",
+    gap_height_scale: "0.03",
+    gap_label_size: "10",
+    backbone_thickness: "3",
+    gap_width: "30",
+    indel_height_scale: "0.01",
+  }),
+  long_ge_5000: Object.freeze({
+    width: "auto",
+    height: "6.0",
+    min_gap_size: "10",
+    block_size: "100",
+    min_sequence_identity: "0.7",
+    backbone_gap: "0.5",
+    bump_scale: "0.3",
+    gap_max_height: "2.0",
+    gap_height_scale: "0.001",
+    gap_label_size: "NULL",
+    backbone_thickness: "3.0",
+    gap_width: "50",
+    indel_height_scale: "0.01",
+  }),
+});
+
+const PRESET_LABELS = Object.freeze({
+  short_lt_5000: "Short alignment (< 5,000 bases)",
+  long_ge_5000: "Long alignment (>= 5,000 bases / current defaults)",
+});
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -135,38 +173,6 @@ function mapDataXToSvgX(dataX) {
   return m.axes_left_px + ratio * (m.axes_right_px - m.axes_left_px);
 }
 
-function setSelectionSummaryValue(id, value) {
-  $(id).textContent = value == null ? "-" : String(value);
-}
-
-function updateSelectionSummary() {
-  const sel = state.selection;
-  if (!sel) {
-    setSelectionSummaryValue("sel_start_col", "-");
-    setSelectionSummaryValue("sel_end_col", "-");
-    setSelectionSummaryValue("sel_start_x", "-");
-    setSelectionSummaryValue("sel_end_x", "-");
-    setSelectionSummaryValue("sel_query_local", "-");
-    setSelectionSummaryValue("sel_reference_local", "-");
-    setSelectionSummaryValue("sel_span", "-");
-    return;
-  }
-
-  setSelectionSummaryValue("sel_start_col", sel.startColumn + 1);
-  setSelectionSummaryValue("sel_end_col", sel.endColumn + 1);
-  setSelectionSummaryValue("sel_start_x", sel.startGlobalX.toFixed(2));
-  setSelectionSummaryValue("sel_end_x", sel.endGlobalX.toFixed(2));
-  setSelectionSummaryValue(
-    "sel_query_local",
-    `${sel.startQueryLocal ?? "NA"} - ${sel.endQueryLocal ?? "NA"}`,
-  );
-  setSelectionSummaryValue(
-    "sel_reference_local",
-    `${sel.startReferenceLocal ?? "NA"} - ${sel.endReferenceLocal ?? "NA"}`,
-  );
-  setSelectionSummaryValue("sel_span", sel.endColumn - sel.startColumn + 1);
-}
-
 function updateExtractButtons() {
   const enabled = Boolean(state.token && state.selection);
   $("extract_query_btn").disabled = !enabled;
@@ -195,14 +201,6 @@ function updateProbeSummary(data) {
   $("probe_query_base").textContent = data.query_base;
   $("probe_ref_pos").textContent = data.reference_local_position;
   $("probe_query_pos").textContent = data.query_local_position;
-  $("probe_idx").textContent = data.column_index;
-
-  const flags = [];
-  if (data.is_weak) flags.push("weak");
-  if (data.is_mismatch) flags.push("mismatch");
-  if (data.is_query_gap) flags.push("query-gap");
-  if (data.is_reference_gap) flags.push("reference-gap");
-  $("probe_flags").textContent = flags.length ? flags.join(", ") : "none";
 }
 
 function resetProbeSummary() {
@@ -210,8 +208,68 @@ function resetProbeSummary() {
   $("probe_query_base").textContent = "-";
   $("probe_ref_pos").textContent = "-";
   $("probe_query_pos").textContent = "-";
-  $("probe_idx").textContent = "-";
-  $("probe_flags").textContent = "-";
+}
+
+function setPresetHelper(text) {
+  $("preset_helper").textContent = text;
+}
+
+function applyPreset(presetKey, helperText = null) {
+  const values = PRESET_VALUES[presetKey];
+  if (!values) {
+    return;
+  }
+  for (const [id, value] of Object.entries(values)) {
+    const node = $(id);
+    if (node) {
+      node.value = String(value);
+    }
+  }
+  setPresetHelper(helperText || `Preset: ${PRESET_LABELS[presetKey]}`);
+}
+
+async function fetchPresetRecommendation() {
+  const inputPath = $("input_path").value.trim();
+  if (!inputPath) {
+    return null;
+  }
+  const response = await fetch("/api/preset_recommendation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      input_path: inputPath,
+      swap_roles: $("swap_roles").checked,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Preset recommendation failed");
+  }
+  return data;
+}
+
+async function resolvePresetBeforeRender() {
+  const mode = $("render_preset").value;
+  if (mode === "short_lt_5000" || mode === "long_ge_5000") {
+    applyPreset(mode);
+    return;
+  }
+  setPresetHelper("Preset: Auto (resolving from sequence length)");
+  try {
+    const recommendation = await fetchPresetRecommendation();
+    if (!recommendation) {
+      setPresetHelper("Preset: Auto (awaiting input path)");
+      return;
+    }
+    const recommendedPreset = recommendation.recommended_preset;
+    applyPreset(
+      recommendedPreset,
+      `Preset: Auto selected ${PRESET_LABELS[recommendedPreset]} (basis length ${recommendation.basis_length.toLocaleString()})`,
+    );
+  } catch (err) {
+    setPresetHelper("Preset: Auto (could not resolve recommendation)");
+    setStatus(`Preset recommendation warning: ${String(err.message || err)}`, false);
+  }
 }
 
 async function fetchProbeAt(xCoord, svgX) {
@@ -373,7 +431,6 @@ function clearSelection() {
   state.dragActive = false;
   state.dragMoved = false;
   state.suppressNextClick = false;
-  updateSelectionSummary();
   updateExtractButtons();
   renderSelectionVisuals();
 }
@@ -410,7 +467,6 @@ async function commitSelection(startDataX, endDataX) {
   state.selectionDraft = null;
   state.selectionAnchor = null;
   state.dragAnchor = null;
-  updateSelectionSummary();
   updateExtractButtons();
   renderSelectionVisuals();
   setStatus(
@@ -554,9 +610,9 @@ function attachProbeInteractions() {
 }
 
 async function renderCurrent() {
-  const payload = buildPayload();
-
   setStatus("Rendering...");
+  await resolvePresetBeforeRender();
+  const payload = buildPayload();
   const response = await fetch("/api/render", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -715,6 +771,15 @@ function bindEvents() {
     }
   });
 
+  $("render_preset").addEventListener("change", () => {
+    const selected = $("render_preset").value;
+    if (selected === "short_lt_5000" || selected === "long_ge_5000") {
+      applyPreset(selected);
+      return;
+    }
+    setPresetHelper("Preset: Auto (resolve on render)");
+  });
+
   $("export_svg").addEventListener("click", async () => {
     try {
       await exportFigure("svg");
@@ -766,9 +831,9 @@ function bindEvents() {
 function bootstrap() {
   setupFileBrowseButtons();
   bindEvents();
-  updateSelectionSummary();
   updateExtractButtons();
   clearSelectionOutput();
+  setPresetHelper("Preset: Auto (resolve on render)");
 }
 
 bootstrap();

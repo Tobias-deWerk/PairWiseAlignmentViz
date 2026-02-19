@@ -382,6 +382,30 @@ def session_from_payload(payload: Dict[str, object]) -> RenderSession:
     return session
 
 
+def recommend_render_preset(
+    *,
+    input_path: Path,
+    swap_roles: bool = False,
+    threshold: int = 5000,
+) -> Dict[str, int | str]:
+    query, reference, _, _ = parse_alignment_pair(input_path)
+    if swap_roles:
+        query, reference = reference, query
+
+    query_ungapped_length = len(query.replace("-", ""))
+    reference_ungapped_length = len(reference.replace("-", ""))
+    basis_length = max(query_ungapped_length, reference_ungapped_length)
+    recommended_preset = "short_lt_5000" if basis_length < threshold else "long_ge_5000"
+
+    return {
+        "recommended_preset": recommended_preset,
+        "basis_length": basis_length,
+        "query_ungapped_length": query_ungapped_length,
+        "reference_ungapped_length": reference_ungapped_length,
+        "threshold": threshold,
+    }
+
+
 def get_session(token: str) -> RenderSession:
     try:
         return SESSION_CACHE[token]
