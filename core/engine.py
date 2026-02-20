@@ -1208,6 +1208,7 @@ def plot_alignment(
     annotation_max_layers: int,
     annotation_spacing: float,
     x_window: Optional[Tuple[float, float]] = None,
+    inversion_regions: Optional[Sequence[Dict[str, object]]] = None,
     *,
     return_metadata: bool = False,
     tight_bbox: bool = True,
@@ -1345,6 +1346,17 @@ def plot_alignment(
             span_end = span_start + 1e-3
         ax.axvspan(span_start, span_end, color="#f0f0f0", alpha=0.7, zorder=0)
 
+    inversion_labels: List[Tuple[float, str]] = []
+    for region in inversion_regions or []:
+        start_x = float(region.get("start_x", 0.0))
+        end_x = float(region.get("end_x", 0.0))
+        if end_x < start_x:
+            start_x, end_x = end_x, start_x
+        if math.isclose(start_x, end_x):
+            end_x = start_x + 1e-3
+        ax.axvspan(start_x, end_x, color="#c7d9ea", alpha=0.26, zorder=1)
+        inversion_labels.append(((start_x + end_x) / 2.0, str(region.get("tag", "INV"))))
+
     for idx, (x_pos, q_char, r_char) in enumerate(
         zip(global_x, data.query, data.reference)
     ):
@@ -1455,6 +1467,22 @@ def plot_alignment(
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
+    if inversion_labels:
+        y_text = y_max - 0.03 * max(1e-6, (y_max - y_min))
+        for x_mid, label in inversion_labels:
+            if x_mid < x_min or x_mid > x_max:
+                continue
+            ax.text(
+                x_mid,
+                y_text,
+                label,
+                fontsize=7,
+                ha="center",
+                va="top",
+                color="#4f6881",
+                zorder=2,
+            )
+
     ax.axis("off")
 
     x_data_min, x_data_max = ax.get_xlim()
@@ -1480,4 +1508,3 @@ def plot_alignment(
     fig.savefig(output, bbox_inches="tight" if tight_bbox else None)
     plt.close(fig)
     return metadata
-

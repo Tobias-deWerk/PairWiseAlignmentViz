@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from textwrap import wrap
 from typing import Dict, Optional, Tuple
@@ -38,6 +38,7 @@ class RenderSession:
     global_extent: float
     gap_labels: list
     resolved_width: float
+    inversion_regions: list = field(default_factory=list)
 
 
 @dataclass
@@ -51,6 +52,8 @@ class RenderResult:
     axes_right_px: float
     svg_width_px: float
     svg_height_px: float
+    inversion_regions: list = field(default_factory=list)
+    feature_tags: list = field(default_factory=list)
 
 
 SESSION_CACHE: Dict[str, RenderSession] = {}
@@ -192,7 +195,18 @@ def render_alignment(
         annotation_label_jitter=session.params.annotation_label_jitter,
         annotation_max_layers=session.params.annotation_max_layers,
         annotation_spacing=session.params.annotation_spacing,
+        inversion_regions=session.inversion_regions,
     )
+    inversion_regions = list(session.inversion_regions)
+    feature_tags = [
+        {
+            "kind": "inversion",
+            "label": str(region.get("tag", "INV")),
+            "start_x": float(region.get("start_x", 0.0)),
+            "end_x": float(region.get("end_x", 0.0)),
+        }
+        for region in inversion_regions
+    ]
     return RenderResult(
         svg=svg_bytes.decode("utf-8"),
         token=session.token,
@@ -203,6 +217,8 @@ def render_alignment(
         axes_right_px=float(metadata.get("axes_right_px", 0.0)),
         svg_width_px=float(metadata.get("svg_width_px", 0.0)),
         svg_height_px=float(metadata.get("svg_height_px", 0.0)),
+        inversion_regions=inversion_regions,
+        feature_tags=feature_tags,
     )
 
 
@@ -242,6 +258,7 @@ def export_alignment(
         annotation_max_layers=session.params.annotation_max_layers,
         annotation_spacing=session.params.annotation_spacing,
         x_window=x_window,
+        inversion_regions=session.inversion_regions,
     )
 
 
@@ -382,6 +399,30 @@ def session_from_payload(payload: Dict[str, object]) -> RenderSession:
     return session
 
 
+def recommend_render_preset(
+    *,
+    input_path: Path,
+    swap_roles: bool = False,
+    threshold: int = 5000,
+) -> Dict[str, int | str]:
+    query, reference, _, _ = parse_alignment_pair(input_path)
+    if swap_roles:
+        query, reference = reference, query
+
+    query_ungapped_length = len(query.replace("-", ""))
+    reference_ungapped_length = len(reference.replace("-", ""))
+    basis_length = max(query_ungapped_length, reference_ungapped_length)
+    recommended_preset = "short_lt_5000" if basis_length < threshold else "long_ge_5000"
+
+    return {
+        "recommended_preset": recommended_preset,
+        "basis_length": basis_length,
+        "query_ungapped_length": query_ungapped_length,
+        "reference_ungapped_length": reference_ungapped_length,
+        "threshold": threshold,
+    }
+
+
 def get_session(token: str) -> RenderSession:
     try:
         return SESSION_CACHE[token]
@@ -431,4 +472,5 @@ def export_to_file_for_cli(session: RenderSession, output: Path) -> None:
         annotation_max_layers=session.params.annotation_max_layers,
         annotation_spacing=session.params.annotation_spacing,
         x_window=None,
+        inversion_regions=session.inversion_regions,
     )

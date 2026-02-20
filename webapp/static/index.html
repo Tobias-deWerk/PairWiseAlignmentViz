@@ -17,119 +17,189 @@
 
       <div class="brand-watermark" aria-hidden="true"></div>
 
-      <section class="viewer-wrap">
-        <h2>Alignment Visualization Output</h2>
-        <div id="viewer" class="viewer"></div>
+      <nav class="tab-nav" aria-label="Application tabs">
+        <button type="button" class="tab-btn active" data-tab-target="viewer">Viewer</button>
+        <button type="button" class="tab-btn" data-tab-target="genome">Genome Alignment</button>
+      </nav>
+
+      <section id="tab-viewer" class="tab-panel active">
+        <section class="viewer-wrap">
+          <h2>Alignment Visualization Output</h2>
+          <div id="viewer" class="viewer"></div>
+        </section>
+
+        <section class="controls-grid">
+          <section class="panel compact panel-data">
+            <h2>Data Selection</h2>
+            <label>Choose alignment FASTA
+              <div class="path-row">
+                <input id="input_path" type="text" placeholder="/path/to/alignment.fasta" />
+                <button type="button" data-browse="input_path">Browse</button>
+              </div>
+            </label>
+            <label>Choose reference annotation
+              <div class="path-row">
+                <input id="reference_annotation_path" type="text" placeholder="/path/to/reference_annotation.txt" />
+                <button type="button" data-browse="reference_annotation_path">Browse</button>
+              </div>
+            </label>
+            <label>Choose query annotation
+              <div class="path-row">
+                <input id="query_annotation_path" type="text" placeholder="/path/to/query_annotation.txt" />
+                <button type="button" data-browse="query_annotation_path">Browse</button>
+              </div>
+            </label>
+            <label class="checkbox-row">
+              <input id="swap_roles" type="checkbox" />
+              <span>Swap query/reference roles</span>
+            </label>
+          </section>
+
+          <section class="panel compact panel-probe" id="probe_summary">
+            <h2>Position</h2>
+            <div>Reference base: <strong id="probe_ref_base">-</strong></div>
+            <div>Query base: <strong id="probe_query_base">-</strong></div>
+            <div>Reference local: <span id="probe_ref_pos">-</span></div>
+            <div>Query local: <span id="probe_query_pos">-</span></div>
+            <hr class="probe-divider" />
+            <div class="selection-actions">
+              <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
+              <button id="extract_reference_btn" type="button" disabled>Extract Reference Sequence</button>
+              <button id="clear_selection_btn" type="button">Clear Selection</button>
+            </div>
+            <label class="output-label" for="extract_output">Extract Output</label>
+            <textarea id="extract_output" readonly rows="7" placeholder="FASTA output appears here."></textarea>
+            <button id="copy_extract_btn" type="button" disabled>Copy Output</button>
+          </section>
+
+          <section class="panel compact panel-params">
+            <h2>User Input Parameters</h2>
+            <div class="grid two">
+              <label>Render preset
+                <select id="render_preset">
+                  <option value="auto">Auto (by sequence length)</option>
+                  <option value="short_lt_5000">Short alignment (&lt; 5,000 bases)</option>
+                  <option value="long_ge_5000">Long alignment (&gt;= 5,000 bases / current defaults)</option>
+                </select>
+              </label>
+              <label>Width
+                <input id="width" type="text" value="auto" />
+              </label>
+              <label>Height
+                <input id="height" type="number" step="0.1" value="6.0" />
+              </label>
+              <label>DPI
+                <input id="dpi" type="number" step="1" value="150" />
+              </label>
+              <label>Tick interval
+                <input id="tick_interval" type="number" step="1" value="10000" />
+              </label>
+            </div>
+            <p class="preset-helper" id="preset_helper">Preset: Auto (resolve on render)</p>
+
+            <details>
+              <summary>Advanced Parameters</summary>
+              <div class="grid two">
+                <label>Min gap size<input id="min_gap_size" type="number" value="10" /></label>
+                <label>Block size<input id="block_size" type="number" value="100" /></label>
+                <label>Min sequence identity<input id="min_sequence_identity" type="number" step="0.01" value="0.7" /></label>
+                <label>Window size<input id="window_size" type="number" value="20" /></label>
+                <label>Backbone gap<input id="backbone_gap" type="number" step="0.1" value="0.5" /></label>
+                <label>Backbone thickness<input id="backbone_thickness" type="number" step="0.1" value="3.0" /></label>
+                <label>Bump scale<input id="bump_scale" type="number" step="0.1" value="0.3" /></label>
+                <label>Mismatch line width<input id="mismatch_line_width" type="number" step="0.1" value="0.4" /></label>
+                <label>Gap max height<input id="gap_max_height" type="number" step="0.01" value="2.0" /></label>
+                <label>Gap width<input id="gap_width" type="number" step="0.01" value="50" /></label>
+                <label>Gap height scale<input id="gap_height_scale" type="number" step="0.001" value="0.001" /></label>
+                <label>Indel height scale<input id="indel_height_scale" type="number" step="0.01" value="0.01" /></label>
+                <label>Gap label size (or NULL)<input id="gap_label_size" type="text" value="NULL" /></label>
+                <label>Annotation label size (or NULL)<input id="annotation_label_size" type="text" value="10.0" /></label>
+                <label>Annotation thickness<input id="annotation_thickness" type="number" step="0.1" value="10.0" /></label>
+                <label>Annotation alpha<input id="annotation_alpha" type="number" step="0.01" value="0.85" /></label>
+                <label>Reference annotation color<input id="reference_annotation_color" type="text" value="#984ea3" /></label>
+                <label>Query annotation color<input id="query_annotation_color" type="text" value="#ff7f00" /></label>
+                <label>Annotation label jitter<input id="annotation_label_jitter" type="number" step="0.1" value="20.0" /></label>
+                <label>Annotation max layers<input id="annotation_max_layers" type="number" value="3" /></label>
+                <label>Annotation spacing<input id="annotation_spacing" type="number" step="0.1" value="0.8" /></label>
+              </div>
+            </details>
+
+            <div class="actions">
+              <button id="render_btn" type="button">Render</button>
+            </div>
+
+            <h3 class="export-title">Export Figure</h3>
+            <div class="export-actions">
+              <button id="export_svg" type="button">Download SVG</button>
+              <button id="export_png" type="button">Download PNG</button>
+            </div>
+            <pre id="status"></pre>
+          </section>
+        </section>
       </section>
 
-      <section class="controls-grid">
-        <section class="panel compact panel-data">
-          <h2>Data Selection</h2>
-          <label>Choose alignment FASTA
-            <div class="path-row">
-              <input id="input_path" type="text" placeholder="/path/to/alignment.fasta" />
-              <button type="button" data-browse="input_path">Browse</button>
-            </div>
-          </label>
-          <label>Choose reference annotation
-            <div class="path-row">
-              <input id="reference_annotation_path" type="text" placeholder="/path/to/reference_annotation.txt" />
-              <button type="button" data-browse="reference_annotation_path">Browse</button>
-            </div>
-          </label>
-          <label>Choose query annotation
-            <div class="path-row">
-              <input id="query_annotation_path" type="text" placeholder="/path/to/query_annotation.txt" />
-              <button type="button" data-browse="query_annotation_path">Browse</button>
-            </div>
-          </label>
-          <label class="checkbox-row">
-            <input id="swap_roles" type="checkbox" />
-            <span>Swap query/reference roles</span>
-          </label>
-        </section>
-
-        <section class="panel compact panel-probe" id="probe_summary">
-          <h2>Base Pair Probe</h2>
-          <div>Reference base: <strong id="probe_ref_base">-</strong></div>
-          <div>Query base: <strong id="probe_query_base">-</strong></div>
-          <div>Reference local: <span id="probe_ref_pos">-</span></div>
-          <div>Query local: <span id="probe_query_pos">-</span></div>
-          <div>Column index: <span id="probe_idx">-</span></div>
-          <div>Flags: <span id="probe_flags">-</span></div>
-          <hr class="probe-divider" />
-          <h3>Selection</h3>
-          <div>Start column: <span id="sel_start_col">-</span></div>
-          <div>End column: <span id="sel_end_col">-</span></div>
-          <div>Start x: <span id="sel_start_x">-</span></div>
-          <div>End x: <span id="sel_end_x">-</span></div>
-          <div>Query local: <span id="sel_query_local">-</span></div>
-          <div>Reference local: <span id="sel_reference_local">-</span></div>
-          <div>Span (columns): <span id="sel_span">-</span></div>
-          <div class="selection-actions">
-            <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
-            <button id="extract_reference_btn" type="button" disabled>Extract Reference Sequence</button>
-            <button id="clear_selection_btn" type="button">Clear Selection</button>
-          </div>
-          <label class="output-label" for="extract_output">Extract Output</label>
-          <textarea id="extract_output" readonly rows="7" placeholder="FASTA output appears here."></textarea>
-          <button id="copy_extract_btn" type="button" disabled>Copy Output</button>
-        </section>
-
-        <section class="panel compact panel-params">
-          <h2>User Input Parameters</h2>
-          <div class="grid two">
-            <label>Width
-              <input id="width" type="text" value="auto" />
+      <section id="tab-genome" class="tab-panel">
+        <section class="controls-grid genome-grid">
+          <section class="panel compact">
+            <h2>Genome FASTA Upload</h2>
+            <label>Query FASTA
+              <input id="genome_query_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
             </label>
-            <label>Height
-              <input id="height" type="number" step="0.1" value="6.0" />
+            <label>Reference FASTA
+              <input id="genome_reference_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
             </label>
-            <label>DPI
-              <input id="dpi" type="number" step="1" value="150" />
-            </label>
-            <label>Tick interval
-              <input id="tick_interval" type="number" step="1" value="10000" />
-            </label>
-          </div>
-
-          <details>
-            <summary>Advanced Parameters</summary>
-            <div class="grid two">
-              <label>Min gap size<input id="min_gap_size" type="number" value="10" /></label>
-              <label>Block size<input id="block_size" type="number" value="100" /></label>
-              <label>Min sequence identity<input id="min_sequence_identity" type="number" step="0.01" value="0.7" /></label>
-              <label>Window size<input id="window_size" type="number" value="20" /></label>
-              <label>Backbone gap<input id="backbone_gap" type="number" step="0.1" value="0.5" /></label>
-              <label>Backbone thickness<input id="backbone_thickness" type="number" step="0.1" value="3.0" /></label>
-              <label>Bump scale<input id="bump_scale" type="number" step="0.1" value="0.3" /></label>
-              <label>Mismatch line width<input id="mismatch_line_width" type="number" step="0.1" value="0.4" /></label>
-              <label>Gap max height<input id="gap_max_height" type="number" step="0.01" value="2.0" /></label>
-              <label>Gap width<input id="gap_width" type="number" step="0.01" value="50" /></label>
-              <label>Gap height scale<input id="gap_height_scale" type="number" step="0.001" value="0.001" /></label>
-              <label>Indel height scale<input id="indel_height_scale" type="number" step="0.01" value="0.01" /></label>
-              <label>Gap label size (or NULL)<input id="gap_label_size" type="text" value="NULL" /></label>
-              <label>Annotation label size (or NULL)<input id="annotation_label_size" type="text" value="10.0" /></label>
-              <label>Annotation thickness<input id="annotation_thickness" type="number" step="0.1" value="10.0" /></label>
-              <label>Annotation alpha<input id="annotation_alpha" type="number" step="0.01" value="0.85" /></label>
-              <label>Reference annotation color<input id="reference_annotation_color" type="text" value="#984ea3" /></label>
-              <label>Query annotation color<input id="query_annotation_color" type="text" value="#ff7f00" /></label>
-              <label>Annotation label jitter<input id="annotation_label_jitter" type="number" step="0.1" value="20.0" /></label>
-              <label>Annotation max layers<input id="annotation_max_layers" type="number" value="3" /></label>
-              <label>Annotation spacing<input id="annotation_spacing" type="number" step="0.1" value="0.8" /></label>
+            <details class="genome-advanced">
+              <summary>Dotplot (NUCmer) Advanced</summary>
+              <div class="grid two">
+                <label>Match mode
+                  <select id="genome_nucmer_match_mode">
+                    <option value="maxmatch">maxmatch</option>
+                    <option value="mumreference">mumreference</option>
+                    <option value="mum">mum</option>
+                  </select>
+                </label>
+                <label>Min cluster (-c)
+                  <input id="genome_nucmer_mincluster" type="number" min="1" placeholder="NUCmer default" />
+                </label>
+                <label>Diag factor (-D)
+                  <input id="genome_nucmer_diagfactor" type="number" min="0.000001" step="0.1" placeholder="NUCmer default" />
+                </label>
+                <label>Break len (-b)
+                  <input id="genome_nucmer_breaklen" type="number" min="1" placeholder="NUCmer default" />
+                </label>
+                <label>Delta filter
+                  <select id="genome_delta_filter_mode">
+                    <option value="none">None</option>
+                    <option value="one_to_one">One-to-one (-1)</option>
+                    <option value="many_to_many">Many-to-many (-m)</option>
+                    <option value="best_query">Best per query (-q)</option>
+                    <option value="best_reference">Best per reference (-r)</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+            <div class="actions">
+              <button id="genome_upload_btn" type="button">Upload FASTA Files</button>
+              <button id="genome_dotplot_btn" type="button" disabled>Compute Synteny Dotplot</button>
             </div>
-          </details>
+            <div class="actions">
+              <button id="genome_align_btn" type="button" disabled>Align Selected Blocks (MAFFT)</button>
+              <button id="genome_send_viewer_btn" type="button" disabled>Send Result to Viewer</button>
+            </div>
+            <pre id="genome_status"></pre>
+          </section>
 
-          <div class="actions">
-            <button id="render_btn" type="button">Render</button>
-          </div>
+          <section class="panel compact">
+            <h2>Synteny Dotplot</h2>
+            <canvas id="genome_dotplot_canvas" width="1000" height="520" class="dotplot-canvas"></canvas>
+            <p id="genome_dotplot_meta" class="preset-helper">Upload and run dotplot to populate this panel.</p>
+          </section>
 
-          <h3 class="export-title">Export Figure</h3>
-          <div class="export-actions">
-            <button id="export_svg" type="button">Download SVG</button>
-            <button id="export_png" type="button">Download PNG</button>
-          </div>
-          <pre id="status"></pre>
+          <section class="panel compact">
+            <h2>Synteny Blocks</h2>
+            <p class="preset-helper">Select blocks for MAFFT. Reverse orientation blocks are auto re-oriented.</p>
+            <div id="genome_block_list" class="block-list"></div>
+          </section>
         </section>
       </section>
 

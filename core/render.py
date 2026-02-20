@@ -61,6 +61,7 @@ def plot_alignment(
     annotation_max_layers: int,
     annotation_spacing: float,
     x_window: Optional[Tuple[float, float]] = None,
+    inversion_regions: Optional[Sequence[dict]] = None,
     *,
     return_metadata: bool = False,
     tight_bbox: bool = True,
@@ -96,6 +97,7 @@ def plot_alignment(
         annotation_max_layers,
         annotation_spacing,
         x_window,
+        inversion_regions,
         return_metadata=return_metadata,
         tight_bbox=tight_bbox,
         full_canvas_axes=full_canvas_axes,
@@ -131,6 +133,7 @@ def render_bytes(
     annotation_max_layers: int,
     annotation_spacing: float,
     x_window: Optional[Tuple[float, float]] = None,
+    inversion_regions: Optional[Sequence[dict]] = None,
 ) -> bytes:
     suffix = ".svg" if fmt == "svg" else ".png"
     with NamedTemporaryFile(suffix=suffix, delete=True) as handle:
@@ -162,6 +165,7 @@ def render_bytes(
             annotation_max_layers,
             annotation_spacing,
             x_window,
+            inversion_regions,
         )
         handle.seek(0)
         return handle.read()
@@ -194,6 +198,7 @@ def render_svg_with_metadata(
     annotation_label_jitter: float,
     annotation_max_layers: int,
     annotation_spacing: float,
+    inversion_regions: Optional[Sequence[dict]] = None,
 ) -> tuple[bytes, dict]:
     with NamedTemporaryFile(suffix=".svg", delete=True) as handle:
         metadata = plot_alignment(
@@ -224,6 +229,7 @@ def render_svg_with_metadata(
             annotation_max_layers,
             annotation_spacing,
             None,
+            inversion_regions,
             return_metadata=True,
             tight_bbox=False,
             full_canvas_axes=True,

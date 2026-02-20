@@ -85,6 +85,31 @@ body {
   background-position: right bottom;
 }
 
+.tab-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  border-radius: 999px;
+  padding: 7px 14px;
+}
+
+.tab-btn.active {
+  background: linear-gradient(165deg, #d8283f 0%, var(--brand-red) 100%);
+  border-color: #a7172a;
+  color: var(--text-on-dark);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 .controls-grid {
   position: relative;
   z-index: 1;
@@ -284,7 +309,7 @@ details summary {
   width: 100%;
   overflow-x: auto;
   overflow-y: auto;
-  contain: layout paint;
+  contain: paint;
   border: 1px solid #c4d2e0;
   border-radius: 10px;
   background: #ffffff;
@@ -357,9 +382,73 @@ details summary {
   letter-spacing: 0.01em;
 }
 
+.genome-grid {
+  grid-template-columns: minmax(240px, 0.9fr) minmax(450px, 1.2fr) minmax(280px, 0.9fr);
+}
+
+#genome_status {
+  white-space: pre-wrap;
+  font-size: 0.76rem;
+  min-height: 4em;
+  margin: 8px 0 0;
+  color: #243a4c;
+}
+
+.dotplot-canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid #c4d2e0;
+  border-radius: 10px;
+  background: #ffffff;
+  display: block;
+}
+
+.block-list {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid #d4ddea;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.block-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #ecf1f7;
+  padding: 8px 9px;
+  font-size: 0.8rem;
+}
+
+.block-row:last-child {
+  border-bottom: 0;
+}
+
+.block-row .block-orientation {
+  font-weight: 700;
+  color: #3a546b;
+}
+
+.block-row.reverse .block-orientation {
+  color: #a33d3d;
+}
+
+.genome-advanced {
+  margin-top: 8px;
+}
+
+.genome-advanced summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 1320px) {
   .controls-grid {
     grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.2fr);
+  }
+
+  .genome-grid {
+    grid-template-columns: 1fr;
   }
 
   .panel-data {

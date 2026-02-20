@@ -13,6 +13,13 @@ const state = {
   dragActive: false,
   dragMoved: false,
   suppressNextClick: false,
+  genome: {
+    uploadId: null,
+    dotplot: null,
+    dotplotJobId: null,
+    alignJobId: null,
+    selectedBlocks: new Set(),
+  },
 };
 
 const paramIds = [
@@ -43,12 +50,62 @@ const paramIds = [
   "annotation_spacing",
 ];
 
+const PRESET_VALUES = Object.freeze({
+  short_lt_5000: Object.freeze({
+    width: "15",
+    height: "4",
+    min_gap_size: "1",
+    block_size: "50",
+    min_sequence_identity: "0.3",
+    backbone_gap: "0.2",
+    bump_scale: "0.1",
+    gap_max_height: "4",
+    gap_height_scale: "0.03",
+    gap_label_size: "10",
+    backbone_thickness: "3",
+    gap_width: "30",
+    indel_height_scale: "0.01",
+  }),
+  long_ge_5000: Object.freeze({
+    width: "auto",
+    height: "6.0",
+    min_gap_size: "10",
+    block_size: "100",
+    min_sequence_identity: "0.7",
+    backbone_gap: "0.5",
+    bump_scale: "0.3",
+    gap_max_height: "2.0",
+    gap_height_scale: "0.001",
+    gap_label_size: "NULL",
+    backbone_thickness: "3.0",
+    gap_width: "50",
+    indel_height_scale: "0.01",
+  }),
+});
+
+const PRESET_LABELS = Object.freeze({
+  short_lt_5000: "Short alignment (< 5,000 bases)",
+  long_ge_5000: "Long alignment (>= 5,000 bases / current defaults)",
+});
+
 function $(id) {
   return document.getElementById(id);
 }
 
 function setStatus(text, isError = false) {
   const node = $("status");
+  if (!node) {
+    return;
+  }
+  node.textContent = text;
+  node.style.color = isError ? "#9a1328" : "#243a4c";
+}
+
+function setGenomeStatus(text, isError = false) {
+  const node = $("genome_status");
+  if (!node) {
+    return;
+  }
   node.textContent = text;
   node.style.color = isError ? "#9a1328" : "#243a4c";
 }
@@ -135,38 +192,6 @@ function mapDataXToSvgX(dataX) {
   return m.axes_left_px + ratio * (m.axes_right_px - m.axes_left_px);
 }
 
-function setSelectionSummaryValue(id, value) {
-  $(id).textContent = value == null ? "-" : String(value);
-}
-
-function updateSelectionSummary() {
-  const sel = state.selection;
-  if (!sel) {
-    setSelectionSummaryValue("sel_start_col", "-");
-    setSelectionSummaryValue("sel_end_col", "-");
-    setSelectionSummaryValue("sel_start_x", "-");
-    setSelectionSummaryValue("sel_end_x", "-");
-    setSelectionSummaryValue("sel_query_local", "-");
-    setSelectionSummaryValue("sel_reference_local", "-");
-    setSelectionSummaryValue("sel_span", "-");
-    return;
-  }
-
-  setSelectionSummaryValue("sel_start_col", sel.startColumn + 1);
-  setSelectionSummaryValue("sel_end_col", sel.endColumn + 1);
-  setSelectionSummaryValue("sel_start_x", sel.startGlobalX.toFixed(2));
-  setSelectionSummaryValue("sel_end_x", sel.endGlobalX.toFixed(2));
-  setSelectionSummaryValue(
-    "sel_query_local",
-    `${sel.startQueryLocal ?? "NA"} - ${sel.endQueryLocal ?? "NA"}`,
-  );
-  setSelectionSummaryValue(
-    "sel_reference_local",
-    `${sel.startReferenceLocal ?? "NA"} - ${sel.endReferenceLocal ?? "NA"}`,
-  );
-  setSelectionSummaryValue("sel_span", sel.endColumn - sel.startColumn + 1);
-}
-
 function updateExtractButtons() {
   const enabled = Boolean(state.token && state.selection);
   $("extract_query_btn").disabled = !enabled;
@@ -195,14 +220,6 @@ function updateProbeSummary(data) {
   $("probe_query_base").textContent = data.query_base;
   $("probe_ref_pos").textContent = data.reference_local_position;
   $("probe_query_pos").textContent = data.query_local_position;
-  $("probe_idx").textContent = data.column_index;
-
-  const flags = [];
-  if (data.is_weak) flags.push("weak");
-  if (data.is_mismatch) flags.push("mismatch");
-  if (data.is_query_gap) flags.push("query-gap");
-  if (data.is_reference_gap) flags.push("reference-gap");
-  $("probe_flags").textContent = flags.length ? flags.join(", ") : "none";
 }
 
 function resetProbeSummary() {
@@ -210,8 +227,68 @@ function resetProbeSummary() {
   $("probe_query_base").textContent = "-";
   $("probe_ref_pos").textContent = "-";
   $("probe_query_pos").textContent = "-";
-  $("probe_idx").textContent = "-";
-  $("probe_flags").textContent = "-";
+}
+
+function setPresetHelper(text) {
+  $("preset_helper").textContent = text;
+}
+
+function applyPreset(presetKey, helperText = null) {
+  const values = PRESET_VALUES[presetKey];
+  if (!values) {
+    return;
+  }
+  for (const [id, value] of Object.entries(values)) {
+    const node = $(id);
+    if (node) {
+      node.value = String(value);
+    }
+  }
+  setPresetHelper(helperText || `Preset: ${PRESET_LABELS[presetKey]}`);
+}
+
+async function fetchPresetRecommendation() {
+  const inputPath = $("input_path").value.trim();
+  if (!inputPath) {
+    return null;
+  }
+  const response = await fetch("/api/preset_recommendation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      input_path: inputPath,
+      swap_roles: $("swap_roles").checked,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Preset recommendation failed");
+  }
+  return data;
+}
+
+async function resolvePresetBeforeRender() {
+  const mode = $("render_preset").value;
+  if (mode === "short_lt_5000" || mode === "long_ge_5000") {
+    applyPreset(mode);
+    return;
+  }
+  setPresetHelper("Preset: Auto (resolving from sequence length)");
+  try {
+    const recommendation = await fetchPresetRecommendation();
+    if (!recommendation) {
+      setPresetHelper("Preset: Auto (awaiting input path)");
+      return;
+    }
+    const recommendedPreset = recommendation.recommended_preset;
+    applyPreset(
+      recommendedPreset,
+      `Preset: Auto selected ${PRESET_LABELS[recommendedPreset]} (basis length ${recommendation.basis_length.toLocaleString()})`,
+    );
+  } catch (err) {
+    setPresetHelper("Preset: Auto (could not resolve recommendation)");
+    setStatus(`Preset recommendation warning: ${String(err.message || err)}`, false);
+  }
 }
 
 async function fetchProbeAt(xCoord, svgX) {
@@ -373,7 +450,6 @@ function clearSelection() {
   state.dragActive = false;
   state.dragMoved = false;
   state.suppressNextClick = false;
-  updateSelectionSummary();
   updateExtractButtons();
   renderSelectionVisuals();
 }
@@ -410,13 +486,9 @@ async function commitSelection(startDataX, endDataX) {
   state.selectionDraft = null;
   state.selectionAnchor = null;
   state.dragAnchor = null;
-  updateSelectionSummary();
   updateExtractButtons();
   renderSelectionVisuals();
-  setStatus(
-    `Selected columns ${state.selection.startColumn + 1}-${state.selection.endColumn + 1}.`,
-    false,
-  );
+  setStatus(`Selected columns ${state.selection.startColumn + 1}-${state.selection.endColumn + 1}.`, false);
 }
 
 function attachProbeInteractions() {
@@ -550,23 +622,11 @@ function attachProbeInteractions() {
       setStatus(String(err.message || err), true);
     }
   });
+
   renderSelectionVisuals();
 }
 
-async function renderCurrent() {
-  const payload = buildPayload();
-
-  setStatus("Rendering...");
-  const response = await fetch("/api/render", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Render failed");
-  }
-
+function applyRenderPayload(data, statusText = null) {
   state.token = data.token;
   state.globalExtent = Number(data.global_extent) || 0;
   state.metadata = {
@@ -584,10 +644,48 @@ async function renderCurrent() {
   clearSelection();
   clearSelectionOutput();
 
-  $("viewer").innerHTML = data.svg;
+  const viewerNode = $("viewer");
+  viewerNode.innerHTML = data.svg;
+  const svgNode = viewerNode.querySelector("svg");
+  if (svgNode) {
+    const metadataWidth = Number(state.metadata.svg_width_px) || 0;
+    if (metadataWidth > 0) {
+      svgNode.style.width = `${metadataWidth}px`;
+      svgNode.style.maxWidth = "none";
+      svgNode.style.height = "auto";
+    } else {
+      svgNode.style.width = "max-content";
+      svgNode.style.maxWidth = "none";
+      svgNode.style.height = "auto";
+    }
+  }
   attachProbeInteractions();
   updateExtractButtons();
-  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}`);
+
+  if (statusText) {
+    setStatus(statusText, false);
+    return;
+  }
+
+  const invCount = Array.isArray(data.inversion_regions) ? data.inversion_regions.length : 0;
+  const invSuffix = invCount > 0 ? ` | Inversions: ${invCount}` : "";
+  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}${invSuffix}`, false);
+}
+
+async function renderCurrent() {
+  setStatus("Rendering...");
+  await resolvePresetBeforeRender();
+  const payload = buildPayload();
+  const response = await fetch("/api/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Render failed");
+  }
+  applyRenderPayload(data);
 }
 
 async function exportFigure(format) {
@@ -688,7 +786,319 @@ function setupFileBrowseButtons() {
   });
 }
 
-function bindEvents() {
+function setActiveTab(tabName) {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-tab-target") === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `tab-${tabName}`);
+  });
+}
+
+function drawDotplot(dotplotPayload) {
+  const canvas = $("genome_dotplot_canvas");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = 44;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = "#92a8bf";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, pad, width - 2 * pad, height - 2 * pad);
+
+  const qLen = Number(dotplotPayload.query_length) || 1;
+  const rLen = Number(dotplotPayload.reference_length) || 1;
+
+  ctx.fillStyle = "#2a4155";
+  ctx.font = "12px IBM Plex Sans, sans-serif";
+  ctx.fillText("Reference", 8, pad - 10);
+  ctx.save();
+  ctx.translate(width - 10, height - 6);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("Query", 0, 0);
+  ctx.restore();
+
+  const points = Array.isArray(dotplotPayload.dotplot?.points) ? dotplotPayload.dotplot.points : [];
+  for (const point of points) {
+    const x = pad + (Number(point.r_pos) / rLen) * (width - 2 * pad);
+    const y = height - pad - (Number(point.q_pos) / qLen) * (height - 2 * pad);
+    ctx.fillStyle = point.orientation === "reverse" ? "#b43a3a" : "#2d6f9f";
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function renderBlockList(blocks) {
+  const node = $("genome_block_list");
+  node.innerHTML = "";
+
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    node.textContent = "No blocks found. You can still run whole-sequence alignment by selecting all once available.";
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const block of blocks) {
+    const row = document.createElement("div");
+    row.className = `block-row ${block.orientation === "reverse" ? "reverse" : "forward"}`;
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.genome.selectedBlocks.has(block.block_id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        state.genome.selectedBlocks.add(block.block_id);
+      } else {
+        state.genome.selectedBlocks.delete(block.block_id);
+      }
+      $("genome_align_btn").disabled = state.genome.selectedBlocks.size === 0;
+    });
+
+    const text = document.createElement("div");
+    text.textContent = `${block.block_id} | q:${block.q_start}-${block.q_end} | r:${block.r_start}-${block.r_end} | id:${Number(block.score).toFixed(2)}%`;
+
+    const orient = document.createElement("span");
+    orient.className = "block-orientation";
+    orient.textContent = block.orientation === "reverse" ? "REV" : "FWD";
+
+    row.appendChild(checkbox);
+    row.appendChild(text);
+    row.appendChild(orient);
+    frag.appendChild(row);
+  }
+  node.appendChild(frag);
+}
+
+function readNucmerOptions() {
+  const matchMode = $("genome_nucmer_match_mode").value || "maxmatch";
+  const deltaFilterMode = $("genome_delta_filter_mode").value || "none";
+
+  const parseOptionalPositiveInt = (raw, label) => {
+    const text = String(raw || "").trim();
+    if (!text) {
+      return null;
+    }
+    const parsed = Number.parseInt(text, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`${label} must be a positive integer.`);
+    }
+    return parsed;
+  };
+
+  const parseOptionalPositiveFloat = (raw, label) => {
+    const text = String(raw || "").trim();
+    if (!text) {
+      return null;
+    }
+    const parsed = Number.parseFloat(text);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`${label} must be a positive number.`);
+    }
+    return parsed;
+  };
+
+  const mincluster = parseOptionalPositiveInt($("genome_nucmer_mincluster").value, "Min cluster (-c)");
+  const diagfactor = parseOptionalPositiveFloat($("genome_nucmer_diagfactor").value, "Diag factor (-D)");
+  const breaklen = parseOptionalPositiveInt($("genome_nucmer_breaklen").value, "Break len (-b)");
+
+  const options = { match_mode: matchMode, delta_filter_mode: deltaFilterMode };
+  if (mincluster != null) {
+    options.mincluster = mincluster;
+  }
+  if (diagfactor != null) {
+    options.diagfactor = diagfactor;
+  }
+  if (breaklen != null) {
+    options.breaklen = breaklen;
+  }
+  return options;
+}
+
+async function pollJob(jobId, onProgress) {
+  while (true) {
+    const response = await fetch(`/api/genome/jobs/${jobId}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Job polling failed");
+    }
+
+    if (typeof onProgress === "function") {
+      onProgress(data);
+    }
+
+    if (data.status === "done") {
+      return data;
+    }
+    if (data.status === "failed" || data.status === "cancelled") {
+      throw new Error(data.error || data.message || `Job ended with status ${data.status}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+}
+
+async function uploadGenomeFastas() {
+  const qFile = $("genome_query_fasta").files?.[0];
+  const rFile = $("genome_reference_fasta").files?.[0];
+  if (!qFile || !rFile) {
+    throw new Error("Choose both query and reference FASTA files.");
+  }
+
+  const form = new FormData();
+  form.append("query_fasta", qFile);
+  form.append("reference_fasta", rFile);
+
+  const response = await fetch("/api/genome/upload", {
+    method: "POST",
+    body: form,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Genome upload failed");
+  }
+
+  state.genome.uploadId = data.upload_id;
+  state.genome.dotplot = null;
+  state.genome.dotplotJobId = null;
+  state.genome.alignJobId = null;
+  state.genome.selectedBlocks = new Set();
+
+  $("genome_dotplot_btn").disabled = false;
+  $("genome_align_btn").disabled = true;
+  $("genome_send_viewer_btn").disabled = true;
+
+  const warnings = Array.isArray(data.warnings) && data.warnings.length > 0 ? ` Warnings: ${data.warnings.join(" | ")}` : "";
+  setGenomeStatus(
+    `Uploaded. Query: ${data.query_name} (${Number(data.query_length).toLocaleString()} bp), Reference: ${data.reference_name} (${Number(data.reference_length).toLocaleString()} bp).${warnings}`,
+    false,
+  );
+}
+
+async function runDotplot() {
+  if (!state.genome.uploadId) {
+    throw new Error("Upload FASTA files first.");
+  }
+  const nucmerOptions = readNucmerOptions();
+
+  const response = await fetch("/api/genome/dotplot/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ upload_id: state.genome.uploadId, nucmer_options: nucmerOptions }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to start dotplot job");
+  }
+
+  state.genome.dotplotJobId = data.job_id;
+  setGenomeStatus("Dotplot started.", false);
+
+  await pollJob(data.job_id, (job) => {
+    const pct = Math.round(Number(job.progress || 0) * 100);
+    let extra = "";
+    if (job.stage === "done" && Array.isArray(job.result?.nucmer_command)) {
+      extra = ` | cmd: ${job.result.nucmer_command.join(" ")}`;
+    }
+    setGenomeStatus(`Dotplot job: ${job.stage} (${pct}%) ${job.message || ""}${extra}`.trim(), false);
+  });
+
+  const dotplotResp = await fetch(`/api/genome/dotplot/${state.genome.uploadId}`);
+  const dotplotData = await dotplotResp.json();
+  if (!dotplotResp.ok) {
+    throw new Error(dotplotData.error || "Failed to load dotplot");
+  }
+
+  state.genome.dotplot = dotplotData;
+  const blocks = Array.isArray(dotplotData.dotplot?.blocks) ? dotplotData.dotplot.blocks : [];
+  state.genome.selectedBlocks = new Set(blocks.map((item) => item.block_id));
+
+  drawDotplot(dotplotData);
+  renderBlockList(blocks);
+  $("genome_align_btn").disabled = state.genome.selectedBlocks.size === 0;
+
+  $("genome_dotplot_meta").textContent = `Blocks: ${blocks.length.toLocaleString()} | Points: ${(dotplotData.dotplot?.points || []).length.toLocaleString()} | Query: ${Number(dotplotData.query_length).toLocaleString()} bp | Reference: ${Number(dotplotData.reference_length).toLocaleString()} bp`;
+
+  const jobStatusResp = await fetch(`/api/genome/jobs/${state.genome.dotplotJobId}`);
+  const jobStatus = await jobStatusResp.json();
+  let statusMsg = "Dotplot complete. Select blocks and run MAFFT.";
+  if (jobStatusResp.ok && Array.isArray(jobStatus.result?.nucmer_command)) {
+    statusMsg += ` Command: ${jobStatus.result.nucmer_command.join(" ")}`;
+  }
+  if (blocks.length === 0) {
+    statusMsg += " No blocks found. Try switching match mode or lowering mincluster.";
+  }
+  setGenomeStatus(statusMsg, false);
+}
+
+async function runGenomeAlignment() {
+  if (!state.genome.uploadId || !state.genome.dotplot) {
+    throw new Error("Run the dotplot first.");
+  }
+
+  const blocks = Array.isArray(state.genome.dotplot.dotplot?.blocks) ? state.genome.dotplot.dotplot.blocks : [];
+  const selectedPayload = blocks.map((block) => ({
+    block_id: block.block_id,
+    include: state.genome.selectedBlocks.has(block.block_id),
+  }));
+
+  const response = await fetch("/api/genome/align/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      upload_id: state.genome.uploadId,
+      selected_blocks: selectedPayload,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to start alignment job");
+  }
+
+  state.genome.alignJobId = data.job_id;
+  $("genome_send_viewer_btn").disabled = true;
+
+  await pollJob(data.job_id, (job) => {
+    const pct = Math.round(Number(job.progress || 0) * 100);
+    setGenomeStatus(`Alignment job: ${job.stage} (${pct}%) ${job.message || ""}`.trim(), false);
+  });
+
+  $("genome_send_viewer_btn").disabled = false;
+  setGenomeStatus("Alignment complete. Send result to Viewer when ready.", false);
+}
+
+async function sendGenomeResultToViewer() {
+  if (!state.genome.alignJobId) {
+    throw new Error("Run MAFFT alignment first.");
+  }
+
+  await resolvePresetBeforeRender();
+  const response = await fetch("/api/genome/send_to_viewer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      alignment_job_id: state.genome.alignJobId,
+      params: readParams(),
+      query_annotation_path: $("query_annotation_path").value.trim(),
+      reference_annotation_path: $("reference_annotation_path").value.trim(),
+      swap_roles: $("swap_roles").checked,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to send genome alignment to viewer");
+  }
+
+  applyRenderPayload(data, "Genome alignment loaded into viewer.");
+  setActiveTab("viewer");
+  setGenomeStatus("Sent to viewer. Inversion regions are shaded and tagged.", false);
+}
+
+function bindViewerEvents() {
   document.addEventListener("keydown", (evt) => {
     if (evt.key !== "Escape") {
       return;
@@ -715,10 +1125,19 @@ function bindEvents() {
     }
   });
 
+  $("render_preset").addEventListener("change", () => {
+    const selected = $("render_preset").value;
+    if (selected === "short_lt_5000" || selected === "long_ge_5000") {
+      applyPreset(selected);
+      return;
+    }
+    setPresetHelper("Preset: Auto (resolve on render)");
+  });
+
   $("export_svg").addEventListener("click", async () => {
     try {
       await exportFigure("svg");
-      setStatus("Exported SVG.");
+      setStatus("Exported SVG.", false);
     } catch (err) {
       setStatus(String(err.message || err), true);
     }
@@ -727,7 +1146,7 @@ function bindEvents() {
   $("export_png").addEventListener("click", async () => {
     try {
       await exportFigure("png");
-      setStatus("Exported PNG.");
+      setStatus("Exported PNG.", false);
     } catch (err) {
       setStatus(String(err.message || err), true);
     }
@@ -763,12 +1182,61 @@ function bindEvents() {
   });
 }
 
+function bindGenomeEvents() {
+  $("genome_upload_btn").addEventListener("click", async () => {
+    try {
+      await uploadGenomeFastas();
+    } catch (err) {
+      setGenomeStatus(String(err.message || err), true);
+    }
+  });
+
+  $("genome_dotplot_btn").addEventListener("click", async () => {
+    try {
+      await runDotplot();
+    } catch (err) {
+      setGenomeStatus(String(err.message || err), true);
+    }
+  });
+
+  $("genome_align_btn").addEventListener("click", async () => {
+    try {
+      await runGenomeAlignment();
+    } catch (err) {
+      setGenomeStatus(String(err.message || err), true);
+    }
+  });
+
+  $("genome_send_viewer_btn").addEventListener("click", async () => {
+    try {
+      await sendGenomeResultToViewer();
+    } catch (err) {
+      setGenomeStatus(String(err.message || err), true);
+    }
+  });
+}
+
+function bindTabEvents() {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.getAttribute("data-tab-target");
+      setActiveTab(target);
+    });
+  });
+}
+
 function bootstrap() {
   setupFileBrowseButtons();
-  bindEvents();
-  updateSelectionSummary();
+  bindTabEvents();
+  bindViewerEvents();
+  bindGenomeEvents();
   updateExtractButtons();
   clearSelectionOutput();
+  setPresetHelper("Preset: Auto (resolve on render)");
+  $("genome_dotplot_btn").disabled = true;
+  $("genome_align_btn").disabled = true;
+  $("genome_send_viewer_btn").disabled = true;
+  setActiveTab("viewer");
 }
 
 bootstrap();

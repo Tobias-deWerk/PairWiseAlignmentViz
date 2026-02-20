@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import matplotlib
 
@@ -389,6 +390,61 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(swapped_query_json["sequence"], default_reference_json["sequence"])
         self.assertEqual(swapped_query_json["stream"], "query")
+
+    def test_api_genome_dotplot_start_accepts_legacy_payload(self):
+        with patch("webapp.app.start_dotplot_job", return_value="job-legacy"):
+            resp = self.client.post("/api/genome/dotplot/start", json={"upload_id": "u123"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["job_id"], "job-legacy")
+
+    def test_api_genome_dotplot_start_accepts_nucmer_options_payload(self):
+        with patch("webapp.app.start_dotplot_job", return_value="job-opts") as mocked:
+            resp = self.client.post(
+                "/api/genome/dotplot/start",
+                json={
+                    "upload_id": "u456",
+                    "nucmer_options": {
+                        "match_mode": "mumreference",
+                        "mincluster": 25,
+                        "diagfactor": 0.2,
+                        "breaklen": 150,
+                    },
+                },
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["job_id"], "job-opts")
+        mocked.assert_called_once()
+
+    def test_api_genome_jobs_status_includes_result_metadata(self):
+        fake_status = {
+            "job_id": "job-meta",
+            "job_type": "dotplot",
+            "upload_id": "u999",
+            "status": "done",
+            "progress": 1.0,
+            "stage": "done",
+            "message": "ok",
+            "error": None,
+            "warnings": [],
+            "result": {
+                "nucmer_command": ["nucmer", "--maxmatch"],
+                "coords_command": ["show-coords", "-T", "-rcl", "/tmp/a.delta"],
+                "points_count": 12,
+                "blocks_count": 4,
+                "parsed_rows_count": 4,
+                "skipped_rows_count": 0,
+            },
+            "created_at": 0.0,
+            "updated_at": 0.0,
+            "cancel_requested": False,
+        }
+        with patch("webapp.app.get_job", return_value=fake_status):
+            resp = self.client.get("/api/genome/jobs/job-meta")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertIn("result", body)
+        self.assertIn("nucmer_command", body["result"])
+        self.assertIn("parsed_rows_count", body["result"])
 
 
 if __name__ == "__main__":

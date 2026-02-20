@@ -77,6 +77,33 @@ The browser app expects file paths on the same machine as the Flask process. The
 
 Alignment input can be either two-sequence aligned FASTA or standard BLAST pairwise output. BLAST parsing expects `Query`/`Sbjct` alignment rows and uses the highest-bit-score HSP when multiple HSP blocks are present.
 
+### Genome-scale alignment tab
+
+The web app includes a dedicated `Genome Alignment` tab for large-input workflows:
+
+1. Upload query/reference FASTA files
+2. Compute a synteny dotplot (`nucmer` + `show-coords`)
+3. Select synteny blocks
+4. Run MAFFT global pairwise alignment on selected blocks
+5. Send the aligned result directly to the `Viewer` tab
+
+Reverse-orientation blocks are automatically re-oriented (query reverse-complement) before MAFFT. When the result is sent to the viewer, inversion-derived regions are shaded and tagged as `INV`.
+
+Required external tools for this tab:
+
+- `nucmer` (MUMmer4)
+- `show-coords` (MUMmer4)
+- `mafft`
+
+Genome-tab API endpoints:
+
+- `POST /api/genome/upload`
+- `POST /api/genome/dotplot/start`
+- `GET /api/genome/jobs/<job_id>`
+- `GET /api/genome/dotplot/<upload_id>`
+- `POST /api/genome/align/start`
+- `POST /api/genome/send_to_viewer`
+
 ## Gene annotations
 
 When `--query-annotation` and/or `--reference-annotation` are supplied, the visualization overlays per-gene features on the respective stream. Annotation files follow a block-based format:
