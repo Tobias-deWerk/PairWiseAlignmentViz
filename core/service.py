@@ -39,6 +39,7 @@ class RenderSession:
     gap_labels: list
     resolved_width: float
     inversion_regions: list = field(default_factory=list)
+    feature_regions: list = field(default_factory=list)
 
 
 @dataclass
@@ -54,6 +55,7 @@ class RenderResult:
     svg_height_px: float
     inversion_regions: list = field(default_factory=list)
     feature_tags: list = field(default_factory=list)
+    feature_regions: list = field(default_factory=list)
 
 
 SESSION_CACHE: Dict[str, RenderSession] = {}
@@ -169,6 +171,10 @@ def render_alignment(
     viewport: Optional[Tuple[float, float]] = None,
 ) -> RenderResult:
     del viewport
+    feature_regions = list(session.feature_regions)
+    if not feature_regions and session.inversion_regions:
+        feature_regions = [dict(region, kind="inversion") for region in session.inversion_regions]
+
     svg_bytes, metadata = render_svg_with_metadata(
         data=session.data,
         global_x=session.global_x,
@@ -196,17 +202,21 @@ def render_alignment(
         annotation_max_layers=session.params.annotation_max_layers,
         annotation_spacing=session.params.annotation_spacing,
         inversion_regions=session.inversion_regions,
+        feature_regions=feature_regions,
     )
-    inversion_regions = list(session.inversion_regions)
-    feature_tags = [
-        {
-            "kind": "inversion",
-            "label": str(region.get("tag", "INV")),
+    inversion_regions = [dict(region) for region in feature_regions if str(region.get("kind", "inversion")) == "inversion"]
+    feature_tags = []
+    for region in feature_regions:
+        tag = {
+            "kind": str(region.get("kind", "inversion")),
+            "label": str(region.get("tag", region.get("label", "TAG"))),
             "start_x": float(region.get("start_x", 0.0)),
             "end_x": float(region.get("end_x", 0.0)),
         }
-        for region in inversion_regions
-    ]
+        pointer_text = str(region.get("pointer_text", "")).strip()
+        if pointer_text:
+            tag["pointer_text"] = pointer_text
+        feature_tags.append(tag)
     return RenderResult(
         svg=svg_bytes.decode("utf-8"),
         token=session.token,
@@ -219,6 +229,7 @@ def render_alignment(
         svg_height_px=float(metadata.get("svg_height_px", 0.0)),
         inversion_regions=inversion_regions,
         feature_tags=feature_tags,
+        feature_regions=feature_regions,
     )
 
 
@@ -259,6 +270,7 @@ def export_alignment(
         annotation_spacing=session.params.annotation_spacing,
         x_window=x_window,
         inversion_regions=session.inversion_regions,
+        feature_regions=session.feature_regions,
     )
 
 
@@ -473,4 +485,5 @@ def export_to_file_for_cli(session: RenderSession, output: Path) -> None:
         annotation_spacing=session.params.annotation_spacing,
         x_window=None,
         inversion_regions=session.inversion_regions,
+        feature_regions=session.feature_regions,
     )

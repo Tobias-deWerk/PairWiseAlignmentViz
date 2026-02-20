@@ -2,6 +2,7 @@ const state = {
   token: null,
   globalExtent: 0,
   metadata: null,
+  featureTags: [],
   probeGlobalX: null,
   probeSvgX: null,
   probeTimer: null,
@@ -19,6 +20,9 @@ const state = {
     dotplotJobId: null,
     alignJobId: null,
     selectedBlocks: new Set(),
+    segmentCache: [],
+    hoveredBlockId: null,
+    canvasBoundHandlers: false,
   },
 };
 
@@ -202,6 +206,43 @@ function updateCopyButton() {
   $("copy_extract_btn").disabled = $("extract_output").value.trim().length === 0;
 }
 
+function setProbeFeatureNote(text, isDuplication = false) {
+  const node = $("probe_feature_note");
+  if (!node) {
+    return;
+  }
+  node.textContent = text;
+  node.classList.toggle("dup-active", Boolean(isDuplication));
+}
+
+function updateProbeFeaturePointer(globalX) {
+  if (!Number.isFinite(globalX)) {
+    setProbeFeatureNote("-", false);
+    return;
+  }
+  const duplicationTags = state.featureTags.filter((tag) => {
+    if (!tag || String(tag.kind || "").toLowerCase() !== "duplication") {
+      return false;
+    }
+    const start = Number(tag.start_x);
+    const end = Number(tag.end_x);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return false;
+    }
+    const low = Math.min(start, end);
+    const high = Math.max(start, end);
+    return globalX >= low && globalX <= high;
+  });
+  if (!duplicationTags.length) {
+    setProbeFeatureNote("-", false);
+    return;
+  }
+  const first = duplicationTags[0];
+  const pointerText = String(first.pointer_text || "").trim() || "Duplicated sequence";
+  const extra = duplicationTags.length > 1 ? ` (+${duplicationTags.length - 1} more)` : "";
+  setProbeFeatureNote(`${pointerText}${extra}`, true);
+}
+
 async function requestProbe(xCoord) {
   const response = await fetch("/api/probe", {
     method: "POST",
@@ -220,6 +261,7 @@ function updateProbeSummary(data) {
   $("probe_query_base").textContent = data.query_base;
   $("probe_ref_pos").textContent = data.reference_local_position;
   $("probe_query_pos").textContent = data.query_local_position;
+  updateProbeFeaturePointer(Number(data.global_x));
 }
 
 function resetProbeSummary() {
@@ -227,6 +269,7 @@ function resetProbeSummary() {
   $("probe_query_base").textContent = "-";
   $("probe_ref_pos").textContent = "-";
   $("probe_query_pos").textContent = "-";
+  setProbeFeatureNote("-", false);
 }
 
 function setPresetHelper(text) {
@@ -629,6 +672,7 @@ function attachProbeInteractions() {
 function applyRenderPayload(data, statusText = null) {
   state.token = data.token;
   state.globalExtent = Number(data.global_extent) || 0;
+  state.featureTags = Array.isArray(data.feature_tags) ? data.feature_tags : [];
   state.metadata = {
     x_data_min: Number(data.x_data_min),
     x_data_max: Number(data.x_data_max),
@@ -661,15 +705,22 @@ function applyRenderPayload(data, statusText = null) {
   }
   attachProbeInteractions();
   updateExtractButtons();
-
+  const invCount = Array.isArray(data.inversion_regions) ? data.inversion_regions.length : 0;
+  const dupCount = state.featureTags.filter((tag) => String(tag?.kind || "").toLowerCase() === "duplication").length;
+  const featureParts = [];
+  if (invCount > 0) {
+    featureParts.push(`Inversions: ${invCount}`);
+  }
+  if (dupCount > 0) {
+    featureParts.push(`Duplications: ${dupCount}`);
+  }
+  const featureSuffix = featureParts.length ? ` | ${featureParts.join(" | ")}` : "";
   if (statusText) {
-    setStatus(statusText, false);
+    const details = featureParts.length ? ` (${featureParts.join(", ")})` : "";
+    setStatus(`${statusText}${details}`, false);
     return;
   }
-
-  const invCount = Array.isArray(data.inversion_regions) ? data.inversion_regions.length : 0;
-  const invSuffix = invCount > 0 ? ` | Inversions: ${invCount}` : "";
-  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}${invSuffix}`, false);
+  setStatus(`Rendered. Query: ${data.query_name} | Reference: ${data.reference_name}${featureSuffix}`, false);
 }
 
 async function renderCurrent() {
@@ -793,14 +844,143 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `tab-${tabName}`);
   });
+  if (tabName === "genome") {
+    requestAnimationFrame(() => {
+      redrawGenomeDotplot();
+    });
+  }
+}
+
+const DOTPLOT_HIT_RADIUS_PX = 6;
+
+function getGenomeBlocks() {
+  return Array.isArray(state.genome.dotplot?.dotplot?.blocks) ? state.genome.dotplot.dotplot.blocks : [];
+}
+
+function updateGenomeAlignButton() {
+  $("genome_align_btn").disabled = state.genome.selectedBlocks.size === 0;
+}
+
+function syncGenomeSelectionUI() {
+  renderBlockList(getGenomeBlocks());
+  redrawGenomeDotplot();
+  updateGenomeAlignButton();
+}
+
+function ensureDotplotCanvasSize(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = Math.max(360, Math.floor(canvas.clientWidth || 1000));
+  const cssHeight = Math.max(420, Math.floor(canvas.clientHeight || 620));
+  const targetWidth = Math.floor(cssWidth * dpr);
+  const targetHeight = Math.floor(cssHeight * dpr);
+
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  return { ctx, width: cssWidth, height: cssHeight };
+}
+
+function getDotplotHoverCandidate(evt) {
+  const canvas = $("genome_dotplot_canvas");
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const y = evt.clientY - rect.top;
+  let best = null;
+  let bestDistance = Infinity;
+
+  for (const segment of state.genome.segmentCache) {
+    const ax = segment.x1;
+    const ay = segment.y1;
+    const bx = segment.x2;
+    const by = segment.y2;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = x - ax;
+    const apy = y - ay;
+    const ab2 = abx * abx + aby * aby;
+    const t = ab2 <= 1e-9 ? 0 : clamp((apx * abx + apy * aby) / ab2, 0, 1);
+    const cx = ax + t * abx;
+    const cy = ay + t * aby;
+    const dx = x - cx;
+    const dy = y - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      best = segment;
+    }
+  }
+
+  if (best && bestDistance <= DOTPLOT_HIT_RADIUS_PX) {
+    return best;
+  }
+  return null;
+}
+
+function redrawGenomeDotplot() {
+  drawDotplot(state.genome.dotplot);
+}
+
+function bindDotplotInteractions() {
+  const canvas = $("genome_dotplot_canvas");
+  if (!canvas || state.genome.canvasBoundHandlers) {
+    return;
+  }
+  state.genome.canvasBoundHandlers = true;
+
+  canvas.addEventListener("mousemove", (evt) => {
+    if (!state.genome.dotplot) {
+      return;
+    }
+    const candidate = getDotplotHoverCandidate(evt);
+    const hoveredBlockId = candidate ? candidate.blockId : null;
+    canvas.style.cursor = candidate ? "pointer" : "crosshair";
+    if (hoveredBlockId === state.genome.hoveredBlockId) {
+      return;
+    }
+    state.genome.hoveredBlockId = hoveredBlockId;
+    redrawGenomeDotplot();
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    if (state.genome.hoveredBlockId == null) {
+      return;
+    }
+    state.genome.hoveredBlockId = null;
+    canvas.style.cursor = "crosshair";
+    redrawGenomeDotplot();
+  });
+
+  canvas.addEventListener("click", (evt) => {
+    if (!state.genome.dotplot) {
+      return;
+    }
+    const candidate = getDotplotHoverCandidate(evt);
+    if (!candidate) {
+      return;
+    }
+    const blockId = candidate.blockId;
+    if (evt.shiftKey) {
+      if (state.genome.selectedBlocks.has(blockId)) {
+        state.genome.selectedBlocks.delete(blockId);
+      } else {
+        state.genome.selectedBlocks.add(blockId);
+      }
+    } else {
+      state.genome.selectedBlocks = new Set([blockId]);
+    }
+    syncGenomeSelectionUI();
+  });
 }
 
 function drawDotplot(dotplotPayload) {
   const canvas = $("genome_dotplot_canvas");
-  const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  const pad = 44;
+  const { ctx, width, height } = ensureDotplotCanvasSize(canvas);
+  const pad = 48;
 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#ffffff";
@@ -810,27 +990,74 @@ function drawDotplot(dotplotPayload) {
   ctx.lineWidth = 1;
   ctx.strokeRect(pad, pad, width - 2 * pad, height - 2 * pad);
 
+  if (!dotplotPayload) {
+    state.genome.segmentCache = [];
+    return;
+  }
+
   const qLen = Number(dotplotPayload.query_length) || 1;
   const rLen = Number(dotplotPayload.reference_length) || 1;
+  const blocks = getGenomeBlocks();
+  const rangeWidth = Math.max(1, width - 2 * pad);
+  const rangeHeight = Math.max(1, height - 2 * pad);
 
   ctx.fillStyle = "#2a4155";
   ctx.font = "12px IBM Plex Sans, sans-serif";
-  ctx.fillText("Reference", 8, pad - 10);
+  ctx.fillText("Reference", 8, pad - 12);
   ctx.save();
-  ctx.translate(width - 10, height - 6);
+  ctx.translate(width - 10, height - 8);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Query", 0, 0);
   ctx.restore();
 
-  const points = Array.isArray(dotplotPayload.dotplot?.points) ? dotplotPayload.dotplot.points : [];
-  for (const point of points) {
-    const x = pad + (Number(point.r_pos) / rLen) * (width - 2 * pad);
-    const y = height - pad - (Number(point.q_pos) / qLen) * (height - 2 * pad);
-    ctx.fillStyle = point.orientation === "reverse" ? "#b43a3a" : "#2d6f9f";
+  const segments = [];
+  for (const block of blocks) {
+    const x1 = pad + (Number(block.r_start) / rLen) * rangeWidth;
+    const x2 = pad + (Number(block.r_end) / rLen) * rangeWidth;
+    const y1 = height - pad - (Number(block.q_start) / qLen) * rangeHeight;
+    const y2 = height - pad - (Number(block.q_end) / qLen) * rangeHeight;
+    const selected = state.genome.selectedBlocks.has(block.block_id);
+    const hovered = state.genome.hoveredBlockId === block.block_id;
+    const reverse = block.orientation === "reverse";
+
+    let strokeStyle = reverse ? "rgba(191, 45, 55, 0.32)" : "rgba(35, 110, 171, 0.32)";
+    let lineWidth = 1.0;
+    if (selected) {
+      strokeStyle = reverse ? "rgba(191, 45, 55, 0.9)" : "rgba(24, 111, 187, 0.9)";
+      lineWidth = 2.2;
+    }
+    if (hovered) {
+      strokeStyle = reverse ? "rgba(147, 23, 31, 0.95)" : "rgba(11, 87, 153, 0.95)";
+      lineWidth += 1.4;
+    }
+
     ctx.beginPath();
-    ctx.arc(x, y, 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    if (selected || hovered) {
+      ctx.fillStyle = reverse ? "#932129" : "#0b5799";
+      ctx.beginPath();
+      ctx.arc(x1, y1, 1.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x2, y2, 1.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    segments.push({
+      blockId: block.block_id,
+      x1,
+      y1,
+      x2,
+      y2,
+    });
   }
+
+  state.genome.segmentCache = segments;
 }
 
 function renderBlockList(blocks) {
@@ -844,19 +1071,20 @@ function renderBlockList(blocks) {
 
   const frag = document.createDocumentFragment();
   for (const block of blocks) {
+    const selected = state.genome.selectedBlocks.has(block.block_id);
     const row = document.createElement("div");
-    row.className = `block-row ${block.orientation === "reverse" ? "reverse" : "forward"}`;
+    row.className = `block-row ${block.orientation === "reverse" ? "reverse" : "forward"}${selected ? " selected" : ""}`;
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = state.genome.selectedBlocks.has(block.block_id);
+    checkbox.checked = selected;
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) {
         state.genome.selectedBlocks.add(block.block_id);
       } else {
         state.genome.selectedBlocks.delete(block.block_id);
       }
-      $("genome_align_btn").disabled = state.genome.selectedBlocks.size === 0;
+      syncGenomeSelectionUI();
     });
 
     const text = document.createElement("div");
@@ -967,10 +1195,15 @@ async function uploadGenomeFastas() {
   state.genome.dotplotJobId = null;
   state.genome.alignJobId = null;
   state.genome.selectedBlocks = new Set();
+  state.genome.segmentCache = [];
+  state.genome.hoveredBlockId = null;
 
   $("genome_dotplot_btn").disabled = false;
   $("genome_align_btn").disabled = true;
   $("genome_send_viewer_btn").disabled = true;
+  $("genome_dotplot_meta").textContent = "Upload and run dotplot to populate this panel.";
+  renderBlockList([]);
+  redrawGenomeDotplot();
 
   const warnings = Array.isArray(data.warnings) && data.warnings.length > 0 ? ` Warnings: ${data.warnings.join(" | ")}` : "";
   setGenomeStatus(
@@ -1016,10 +1249,8 @@ async function runDotplot() {
   state.genome.dotplot = dotplotData;
   const blocks = Array.isArray(dotplotData.dotplot?.blocks) ? dotplotData.dotplot.blocks : [];
   state.genome.selectedBlocks = new Set(blocks.map((item) => item.block_id));
-
-  drawDotplot(dotplotData);
-  renderBlockList(blocks);
-  $("genome_align_btn").disabled = state.genome.selectedBlocks.size === 0;
+  state.genome.hoveredBlockId = null;
+  syncGenomeSelectionUI();
 
   $("genome_dotplot_meta").textContent = `Blocks: ${blocks.length.toLocaleString()} | Points: ${(dotplotData.dotplot?.points || []).length.toLocaleString()} | Query: ${Number(dotplotData.query_length).toLocaleString()} bp | Reference: ${Number(dotplotData.reference_length).toLocaleString()} bp`;
 
@@ -1045,6 +1276,7 @@ async function runGenomeAlignment() {
     block_id: block.block_id,
     include: state.genome.selectedBlocks.has(block.block_id),
   }));
+  const includeIntervals = $("genome_include_intervals").checked;
 
   const response = await fetch("/api/genome/align/start", {
     method: "POST",
@@ -1052,6 +1284,9 @@ async function runGenomeAlignment() {
     body: JSON.stringify({
       upload_id: state.genome.uploadId,
       selected_blocks: selectedPayload,
+      align_options: {
+        include_inter_block_intervals: includeIntervals,
+      },
     }),
   });
   const data = await response.json();
@@ -1095,7 +1330,7 @@ async function sendGenomeResultToViewer() {
 
   applyRenderPayload(data, "Genome alignment loaded into viewer.");
   setActiveTab("viewer");
-  setGenomeStatus("Sent to viewer. Inversion regions are shaded and tagged.", false);
+  setGenomeStatus("Sent to viewer. Inversion and duplication regions are shaded and tagged.", false);
 }
 
 function bindViewerEvents() {
@@ -1183,6 +1418,22 @@ function bindViewerEvents() {
 }
 
 function bindGenomeEvents() {
+  bindDotplotInteractions();
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (!state.genome.dotplot) {
+      return;
+    }
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+    }
+    resizeTimer = setTimeout(() => {
+      redrawGenomeDotplot();
+      resizeTimer = null;
+    }, 100);
+  });
+
   $("genome_upload_btn").addEventListener("click", async () => {
     try {
       await uploadGenomeFastas();

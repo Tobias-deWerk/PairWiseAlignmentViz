@@ -255,13 +255,14 @@ def api_genome_align_start():
     payload = request.get_json(silent=True) or {}
     upload_id = str(payload.get("upload_id", "")).strip()
     selected_blocks = payload.get("selected_blocks")
+    align_options = payload.get("align_options", {})
     if not upload_id:
         return jsonify({"error": "upload_id is required"}), 400
     if not isinstance(selected_blocks, list):
         return jsonify({"error": "selected_blocks must be a list"}), 400
 
     try:
-        job_id = start_alignment_job(upload_id, selected_blocks)
+        job_id = start_alignment_job(upload_id, selected_blocks, align_options=align_options)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"job_id": job_id})

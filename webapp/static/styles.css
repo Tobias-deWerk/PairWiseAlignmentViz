@@ -165,6 +165,18 @@ label {
   color: #334a5f;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
 input,
 button,
 summary,
@@ -336,6 +348,15 @@ details summary {
   margin: 9px 0;
 }
 
+#probe_feature_note {
+  color: #445c6f;
+  font-weight: 600;
+}
+
+#probe_feature_note.dup-active {
+  color: #2f6b3d;
+}
+
 .selection-actions {
   margin-top: 8px;
   display: grid;
@@ -382,8 +403,22 @@ details summary {
   letter-spacing: 0.01em;
 }
 
-.genome-grid {
-  grid-template-columns: minmax(240px, 0.9fr) minmax(450px, 1.2fr) minmax(280px, 0.9fr);
+.genome-layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(720px, 2.45fr);
+  align-items: start;
+}
+
+.genome-side {
+  display: grid;
+  gap: 12px;
+}
+
+.genome-plot-panel {
+  min-width: 0;
 }
 
 #genome_status {
@@ -396,11 +431,12 @@ details summary {
 
 .dotplot-canvas {
   width: 100%;
-  height: auto;
+  height: min(70vh, 700px);
   border: 1px solid #c4d2e0;
   border-radius: 10px;
   background: #ffffff;
   display: block;
+  cursor: crosshair;
 }
 
 .block-list {
@@ -425,6 +461,14 @@ details summary {
   border-bottom: 0;
 }
 
+.block-row.selected {
+  background: #e7f0fb;
+}
+
+.block-row:hover {
+  background: #f4f8fc;
+}
+
 .block-row .block-orientation {
   font-weight: 700;
   color: #3a546b;
@@ -438,6 +482,11 @@ details summary {
   margin-top: 8px;
 }
 
+.genome-option-row {
+  margin-top: 10px;
+  margin-bottom: 2px;
+}
+
 .genome-advanced summary {
   margin-bottom: 8px;
 }
@@ -447,7 +496,7 @@ details summary {
     grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.2fr);
   }
 
-  .genome-grid {
+  .genome-layout {
     grid-template-columns: 1fr;
   }
 
@@ -485,6 +534,10 @@ details summary {
   .viewer {
     min-height: 320px;
     max-height: 62vh;
+  }
+
+  .dotplot-canvas {
+    height: min(58vh, 560px);
   }
 
   .brand-watermark {

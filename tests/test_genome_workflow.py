@@ -76,7 +76,15 @@ class GenomeWorkflowTests(unittest.TestCase):
             },
         )
 
-        query_concat, reference_concat, inversion_ranges, selected = gw._build_selected_sequences(
+        (
+            query_concat,
+            reference_concat,
+            inversion_ranges,
+            duplication_ranges,
+            selected,
+            inter_block_count,
+            stitching_notes,
+        ) = gw._build_selected_sequences(
             upload,
             [
                 {"block_id": "b0", "include": True},
@@ -87,7 +95,122 @@ class GenomeWorkflowTests(unittest.TestCase):
         self.assertEqual(query_concat, "AAAAGGGG")
         self.assertEqual(reference_concat, "AAAACCCC")
         self.assertEqual(inversion_ranges, [(5, 8)])
+        self.assertEqual(duplication_ranges, [])
         self.assertEqual(len(selected), 2)
+        self.assertEqual(inter_block_count, 0)
+        self.assertEqual(stitching_notes, [])
+
+    def test_build_selected_sequences_includes_intervals_when_enabled(self):
+        upload = gw.UploadRecord(
+            upload_id="u1b",
+            dir_path=Path(self.tempdir.name),
+            query_path=Path(self.tempdir.name) / "q.fa",
+            reference_path=Path(self.tempdir.name) / "r.fa",
+            query_name="q",
+            reference_name="r",
+            query_sequence="AAAACCCCGGGGTTTT",
+            reference_sequence="AAAACCCCGGGGTTTT",
+            query_length=16,
+            reference_length=16,
+            dotplot={
+                "blocks": [
+                    {
+                        "block_id": "b0",
+                        "q_start": 1,
+                        "q_end": 4,
+                        "r_start": 1,
+                        "r_end": 4,
+                        "orientation": "forward",
+                        "score": 99.0,
+                    },
+                    {
+                        "block_id": "b1",
+                        "q_start": 9,
+                        "q_end": 12,
+                        "r_start": 9,
+                        "r_end": 12,
+                        "orientation": "forward",
+                        "score": 99.0,
+                    },
+                ]
+            },
+        )
+
+        (
+            query_concat,
+            reference_concat,
+            _inversion_ranges,
+            _duplication_ranges,
+            _selected,
+            inter_block_count,
+            stitching_notes,
+        ) = gw._build_selected_sequences(
+            upload,
+            [
+                {"block_id": "b0", "include": True},
+                {"block_id": "b1", "include": True},
+            ],
+            include_inter_block_intervals=True,
+        )
+
+        self.assertEqual(query_concat, "AAAACCCCGGGG")
+        self.assertEqual(reference_concat, "AAAACCCCGGGG")
+        self.assertEqual(inter_block_count, 1)
+        self.assertEqual(stitching_notes, [])
+
+    def test_build_selected_sequences_marks_duplicate_overlap(self):
+        upload = gw.UploadRecord(
+            upload_id="u1c",
+            dir_path=Path(self.tempdir.name),
+            query_path=Path(self.tempdir.name) / "q.fa",
+            reference_path=Path(self.tempdir.name) / "r.fa",
+            query_name="q",
+            reference_name="r",
+            query_sequence="AAAACCCCGGGGTTTT",
+            reference_sequence="AAAACCCCGGGGTTTT",
+            query_length=16,
+            reference_length=16,
+            dotplot={
+                "blocks": [
+                    {
+                        "block_id": "b0",
+                        "q_start": 1,
+                        "q_end": 8,
+                        "r_start": 1,
+                        "r_end": 8,
+                        "orientation": "forward",
+                        "score": 99.0,
+                    },
+                    {
+                        "block_id": "b1",
+                        "q_start": 5,
+                        "q_end": 12,
+                        "r_start": 9,
+                        "r_end": 16,
+                        "orientation": "forward",
+                        "score": 98.0,
+                    },
+                ]
+            },
+        )
+        (
+            _query_concat,
+            _reference_concat,
+            _inversion_ranges,
+            duplication_ranges,
+            selected,
+            _inter_block_count,
+            _stitching_notes,
+        ) = gw._build_selected_sequences(
+            upload,
+            [
+                {"block_id": "b0", "include": True},
+                {"block_id": "b1", "include": True},
+            ],
+        )
+        self.assertEqual(len(duplication_ranges), 2)
+        self.assertTrue(all(item["is_duplicate"] for item in selected))
+        self.assertIn("Duplicated on query 1-8; reference 1-8", duplication_ranges[0]["pointer_text"])
 
     def test_map_local_ranges_to_columns_handles_gaps(self):
         cols = gw._map_local_ranges_to_columns("AA--CCGG", [(3, 6)])
@@ -112,12 +235,50 @@ class GenomeWorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gw.start_alignment_job(upload.upload_id, [{"block_id": "b0", "include": False}])
 
+    def test_start_alignment_job_persists_align_options(self):
+        upload = gw.UploadRecord(
+            upload_id="u2b",
+            dir_path=Path(self.tempdir.name),
+            query_path=Path(self.tempdir.name) / "q.fa",
+            reference_path=Path(self.tempdir.name) / "r.fa",
+            query_name="q",
+            reference_name="r",
+            query_sequence="AAAA",
+            reference_sequence="AAAA",
+            query_length=4,
+            reference_length=4,
+            dotplot={"blocks": [{"block_id": "b0", "q_start": 1, "q_end": 4, "r_start": 1, "r_end": 4, "orientation": "forward", "score": 100.0}]},
+        )
+        gw.UPLOADS[upload.upload_id] = upload
+
+        old_run = gw._run_alignment_job
+        try:
+            gw._run_alignment_job = lambda _job, _selected, _opts: None
+            job_id = gw.start_alignment_job(
+                upload.upload_id,
+                [{"block_id": "b0", "include": True}],
+                align_options={"include_inter_block_intervals": True},
+            )
+            self.assertIn(job_id, gw.JOBS)
+            self.assertTrue(gw.JOBS[job_id].result["align_options_used"]["include_inter_block_intervals"])
+        finally:
+            gw._run_alignment_job = old_run
+
     def test_parse_dotplot_options_defaults(self):
         parsed = gw._parse_dotplot_options({})
         self.assertEqual(parsed["match_mode"], "maxmatch")
         self.assertNotIn("mincluster", parsed)
         self.assertNotIn("diagfactor", parsed)
         self.assertNotIn("breaklen", parsed)
+
+    def test_parse_align_options_defaults_and_validation(self):
+        parsed = gw._parse_align_options({})
+        self.assertIn("include_inter_block_intervals", parsed)
+        self.assertFalse(parsed["include_inter_block_intervals"])
+        parsed_true = gw._parse_align_options({"include_inter_block_intervals": "true"})
+        self.assertTrue(parsed_true["include_inter_block_intervals"])
+        with self.assertRaises(ValueError):
+            gw._parse_align_options({"include_inter_block_intervals": "invalid"})
 
     def test_parse_dotplot_options_valid_values(self):
         parsed = gw._parse_dotplot_options(
@@ -274,6 +435,16 @@ class GenomeWorkflowTests(unittest.TestCase):
         self.assertIn("delta_path", job.result)
         self.assertGreaterEqual(job.result.get("parsed_rows_count", 0), 1)
         self.assertIn("skipped_rows_count", job.result)
+
+    def test_map_labeled_local_ranges_to_columns_keeps_payload(self):
+        mapped = gw._map_labeled_local_ranges_to_columns(
+            "AA--CCGG",
+            [{"start_local": 3, "end_local": 6, "label": "DUP", "pointer_text": "Duplicated on query 3-6; reference 3-6"}],
+        )
+        self.assertEqual(len(mapped), 1)
+        self.assertEqual(mapped[0]["start_column"], 5)
+        self.assertEqual(mapped[0]["end_column"], 8)
+        self.assertEqual(mapped[0]["label"], "DUP")
 
 
 if __name__ == "__main__":

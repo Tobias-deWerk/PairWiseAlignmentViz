@@ -61,6 +61,7 @@
             <div>Query base: <strong id="probe_query_base">-</strong></div>
             <div>Reference local: <span id="probe_ref_pos">-</span></div>
             <div>Query local: <span id="probe_query_pos">-</span></div>
+            <div>Feature note: <span id="probe_feature_note">-</span></div>
             <hr class="probe-divider" />
             <div class="selection-actions">
               <button id="extract_query_btn" type="button" disabled>Extract Query Sequence</button>
@@ -139,66 +140,72 @@
       </section>
 
       <section id="tab-genome" class="tab-panel">
-        <section class="controls-grid genome-grid">
-          <section class="panel compact">
-            <h2>Genome FASTA Upload</h2>
-            <label>Query FASTA
-              <input id="genome_query_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
-            </label>
-            <label>Reference FASTA
-              <input id="genome_reference_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
-            </label>
-            <details class="genome-advanced">
-              <summary>Dotplot (NUCmer) Advanced</summary>
-              <div class="grid two">
-                <label>Match mode
-                  <select id="genome_nucmer_match_mode">
-                    <option value="maxmatch">maxmatch</option>
-                    <option value="mumreference">mumreference</option>
-                    <option value="mum">mum</option>
-                  </select>
-                </label>
-                <label>Min cluster (-c)
-                  <input id="genome_nucmer_mincluster" type="number" min="1" placeholder="NUCmer default" />
-                </label>
-                <label>Diag factor (-D)
-                  <input id="genome_nucmer_diagfactor" type="number" min="0.000001" step="0.1" placeholder="NUCmer default" />
-                </label>
-                <label>Break len (-b)
-                  <input id="genome_nucmer_breaklen" type="number" min="1" placeholder="NUCmer default" />
-                </label>
-                <label>Delta filter
-                  <select id="genome_delta_filter_mode">
-                    <option value="none">None</option>
-                    <option value="one_to_one">One-to-one (-1)</option>
-                    <option value="many_to_many">Many-to-many (-m)</option>
-                    <option value="best_query">Best per query (-q)</option>
-                    <option value="best_reference">Best per reference (-r)</option>
-                  </select>
-                </label>
+        <section class="genome-layout">
+          <div class="genome-side">
+            <section class="panel compact">
+              <h2>Genome FASTA Upload</h2>
+              <label>Query FASTA
+                <input id="genome_query_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
+              </label>
+              <label>Reference FASTA
+                <input id="genome_reference_fasta" type="file" accept=".fa,.fasta,.fna,.txt" />
+              </label>
+              <details class="genome-advanced">
+                <summary>Dotplot (NUCmer) Advanced</summary>
+                <div class="grid two">
+                  <label>Match mode
+                    <select id="genome_nucmer_match_mode">
+                      <option value="maxmatch">maxmatch</option>
+                      <option value="mumreference">mumreference</option>
+                      <option value="mum">mum</option>
+                    </select>
+                  </label>
+                  <label>Min cluster (-c)
+                    <input id="genome_nucmer_mincluster" type="number" min="1" placeholder="NUCmer default" />
+                  </label>
+                  <label>Diag factor (-D)
+                    <input id="genome_nucmer_diagfactor" type="number" min="0.000001" step="0.1" placeholder="NUCmer default" />
+                  </label>
+                  <label>Break len (-b)
+                    <input id="genome_nucmer_breaklen" type="number" min="1" placeholder="NUCmer default" />
+                  </label>
+                  <label>Delta filter
+                    <select id="genome_delta_filter_mode">
+                      <option value="none">None</option>
+                      <option value="one_to_one">One-to-one (-1)</option>
+                      <option value="many_to_many">Many-to-many (-m)</option>
+                      <option value="best_query">Best per query (-q)</option>
+                      <option value="best_reference">Best per reference (-r)</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
+              <div class="actions">
+                <button id="genome_upload_btn" type="button">Upload FASTA Files</button>
+                <button id="genome_dotplot_btn" type="button" disabled>Compute Synteny Dotplot</button>
               </div>
-            </details>
-            <div class="actions">
-              <button id="genome_upload_btn" type="button">Upload FASTA Files</button>
-              <button id="genome_dotplot_btn" type="button" disabled>Compute Synteny Dotplot</button>
-            </div>
-            <div class="actions">
-              <button id="genome_align_btn" type="button" disabled>Align Selected Blocks (MAFFT)</button>
-              <button id="genome_send_viewer_btn" type="button" disabled>Send Result to Viewer</button>
-            </div>
-            <pre id="genome_status"></pre>
-          </section>
+              <label class="checkbox-row genome-option-row">
+                <input id="genome_include_intervals" type="checkbox" />
+                <span>Include inter-block genomic intervals</span>
+              </label>
+              <div class="actions">
+                <button id="genome_align_btn" type="button" disabled>Align Selected Blocks (MAFFT)</button>
+                <button id="genome_send_viewer_btn" type="button" disabled>Send Result to Viewer</button>
+              </div>
+              <pre id="genome_status"></pre>
+            </section>
 
-          <section class="panel compact">
+            <section class="panel compact">
+              <h2>Synteny Blocks</h2>
+              <p class="preset-helper">Click lines in the plot or use checkboxes. Shift+click adds/removes.</p>
+              <div id="genome_block_list" class="block-list"></div>
+            </section>
+          </div>
+
+          <section class="panel compact genome-plot-panel">
             <h2>Synteny Dotplot</h2>
-            <canvas id="genome_dotplot_canvas" width="1000" height="520" class="dotplot-canvas"></canvas>
+            <canvas id="genome_dotplot_canvas" width="1200" height="720" class="dotplot-canvas"></canvas>
             <p id="genome_dotplot_meta" class="preset-helper">Upload and run dotplot to populate this panel.</p>
-          </section>
-
-          <section class="panel compact">
-            <h2>Synteny Blocks</h2>
-            <p class="preset-helper">Select blocks for MAFFT. Reverse orientation blocks are auto re-oriented.</p>
-            <div id="genome_block_list" class="block-list"></div>
           </section>
         </section>
       </section>

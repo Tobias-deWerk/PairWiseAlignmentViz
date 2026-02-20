@@ -284,6 +284,24 @@ def _to_positive_float(value: object, name: str) -> float:
     return parsed
 
 
+def _to_bool(value: object, *, default: bool = False, name: str = "value") -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return bool(value)
+        raise ValueError(f"{name} must be a boolean")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 def _parse_dotplot_options(payload_options: Optional[Dict[str, object]]) -> Dict[str, object]:
     options = payload_options or {}
     if not isinstance(options, dict):
@@ -316,6 +334,18 @@ def _parse_dotplot_options(payload_options: Optional[Dict[str, object]]) -> Dict
     parsed["delta_filter_mode"] = delta_filter_mode
 
     return parsed
+
+
+def _parse_align_options(payload_options: Optional[Dict[str, object]]) -> Dict[str, object]:
+    options = payload_options or {}
+    if not isinstance(options, dict):
+        raise ValueError("align_options must be an object")
+    include_intervals = _to_bool(
+        options.get("include_inter_block_intervals"),
+        default=False,
+        name="align_options.include_inter_block_intervals",
+    )
+    return {"include_inter_block_intervals": include_intervals}
 
 
 def _build_nucmer_command(
@@ -625,6 +655,48 @@ def _extract_segment(seq: str, start_1: int, end_1: int) -> str:
     return seq[start:end]
 
 
+def _extract_bridge_segment(seq: str, prev_anchor: int, next_anchor: int) -> str:
+    start_anchor = int(prev_anchor)
+    end_anchor = int(next_anchor)
+    if abs(end_anchor - start_anchor) <= 1:
+        return ""
+    low = min(start_anchor, end_anchor) + 1
+    high = max(start_anchor, end_anchor) - 1
+    if high < low:
+        return ""
+    bridge = _extract_segment(seq, low, high)
+    if not bridge:
+        return ""
+    if start_anchor > end_anchor:
+        return reverse_complement(bridge)
+    return bridge
+
+
+def _ranges_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
+    left_a, right_a = _normalize_bounds(int(a_start), int(a_end))
+    left_b, right_b = _normalize_bounds(int(b_start), int(b_end))
+    return max(left_a, left_b) <= min(right_a, right_b)
+
+
+def _map_labeled_local_ranges_to_columns(
+    aligned_query: str,
+    labeled_ranges: Sequence[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    mapped: List[Dict[str, object]] = []
+    for item in labeled_ranges:
+        start_local = int(item.get("start_local", 0))
+        end_local = int(item.get("end_local", 0))
+        if start_local <= 0 or end_local <= 0:
+            continue
+        intervals = _map_local_ranges_to_columns(aligned_query, [(start_local, end_local)])
+        for start_col, end_col in intervals:
+            payload = dict(item)
+            payload["start_column"] = int(start_col)
+            payload["end_column"] = int(end_col)
+            mapped.append(payload)
+    return mapped
+
+
 def _parse_mafft_pair(path: Path) -> Tuple[str, str]:
     seqs: List[str] = []
     chunks: List[str] = []
@@ -691,17 +763,31 @@ def _map_local_ranges_to_columns(aligned_query: str, local_ranges: Sequence[Tupl
 def _build_selected_sequences(
     upload: UploadRecord,
     selected_blocks: Sequence[Dict[str, object]],
-) -> Tuple[str, str, List[Tuple[int, int]], List[Dict[str, object]]]:
+    *,
+    include_inter_block_intervals: bool = False,
+) -> Tuple[
+    str,
+    str,
+    List[Tuple[int, int]],
+    List[Dict[str, object]],
+    List[Dict[str, object]],
+    int,
+    List[str],
+]:
     blocks = [] if upload.dotplot is None else list(upload.dotplot.get("blocks", []))
 
     if not selected_blocks:
-        return upload.query_sequence, upload.reference_sequence, [], []
+        return upload.query_sequence, upload.reference_sequence, [], [], [], 0, []
 
     query_parts: List[str] = []
     reference_parts: List[str] = []
     inversion_ranges_local: List[Tuple[int, int]] = []
+    duplication_local_ranges: List[Dict[str, object]] = []
     selected_summary: List[Dict[str, object]] = []
+    stitching_notes: List[str] = []
+    inter_block_intervals_count = 0
     query_offset = 0
+    previous_block: Optional[Dict[str, object]] = None
 
     for item in selected_blocks:
         include = bool(item.get("include", True))
@@ -731,10 +817,42 @@ def _build_selected_sequences(
         if not query_segment or not reference_segment:
             continue
 
-        if str(block.get("orientation")) == "reverse":
+        orientation = str(block.get("orientation", "forward"))
+        query_anchor_start = q1 if orientation == "reverse" else q0
+        query_anchor_end = q0 if orientation == "reverse" else q1
+        reference_anchor_start = r0
+        reference_anchor_end = r1
+
+        if include_inter_block_intervals and previous_block is not None:
+            query_bridge = _extract_bridge_segment(
+                upload.query_sequence,
+                int(previous_block["query_anchor_end"]),
+                query_anchor_start,
+            )
+            reference_bridge = _extract_bridge_segment(
+                upload.reference_sequence,
+                int(previous_block["reference_anchor_end"]),
+                reference_anchor_start,
+            )
+            if query_bridge:
+                query_parts.append(query_bridge)
+                query_offset += len(query_bridge)
+            if reference_bridge:
+                reference_parts.append(reference_bridge)
+            if query_bridge or reference_bridge:
+                inter_block_intervals_count += 1
+            if bool(query_bridge) != bool(reference_bridge):
+                stitching_notes.append(
+                    "Inter-block bridge between "
+                    f"{previous_block['block_id']} and {block_id} produced only one stream interval."
+                )
+
+        if orientation == "reverse":
             query_segment = reverse_complement(query_segment)
-            start_local = query_offset + 1
-            end_local = query_offset + len(query_segment)
+
+        start_local = query_offset + 1
+        end_local = query_offset + len(query_segment)
+        if orientation == "reverse":
             inversion_ranges_local.append((start_local, end_local))
 
         query_parts.append(query_segment)
@@ -748,9 +866,16 @@ def _build_selected_sequences(
                 "q_end": q1,
                 "r_start": r0,
                 "r_end": r1,
-                "orientation": block.get("orientation", "forward"),
+                "orientation": orientation,
+                "query_local_start": start_local,
+                "query_local_end": end_local,
             }
         )
+        previous_block = {
+            "block_id": block_id,
+            "query_anchor_end": query_anchor_end,
+            "reference_anchor_end": reference_anchor_end,
+        }
 
     query_concat = "".join(query_parts)
     reference_concat = "".join(reference_parts)
@@ -758,18 +883,74 @@ def _build_selected_sequences(
     if not query_concat or not reference_concat:
         raise ValueError("Selection produced empty sequence set")
 
-    return query_concat, reference_concat, inversion_ranges_local, selected_summary
+    duplicate_ids: set[str] = set()
+    for left_idx in range(len(selected_summary)):
+        left = selected_summary[left_idx]
+        for right_idx in range(left_idx + 1, len(selected_summary)):
+            right = selected_summary[right_idx]
+            if _ranges_overlap(left["q_start"], left["q_end"], right["q_start"], right["q_end"]) or _ranges_overlap(
+                left["r_start"], left["r_end"], right["r_start"], right["r_end"]
+            ):
+                duplicate_ids.add(str(left["block_id"]))
+                duplicate_ids.add(str(right["block_id"]))
+
+    for item in selected_summary:
+        block_id = str(item["block_id"])
+        is_duplicate = block_id in duplicate_ids
+        item["is_duplicate"] = is_duplicate
+        if not is_duplicate:
+            continue
+        duplication_local_ranges.append(
+            {
+                "start_local": int(item["query_local_start"]),
+                "end_local": int(item["query_local_end"]),
+                "label": "DUP",
+                "block_id": block_id,
+                "pointer_text": (
+                    f"Duplicated on query {int(item['q_start'])}-{int(item['q_end'])}; "
+                    f"reference {int(item['r_start'])}-{int(item['r_end'])}"
+                ),
+            }
+        )
+
+    return (
+        query_concat,
+        reference_concat,
+        inversion_ranges_local,
+        duplication_local_ranges,
+        selected_summary,
+        inter_block_intervals_count,
+        stitching_notes,
+    )
 
 
-def _run_alignment_job(job: JobRecord, selected_blocks: Sequence[Dict[str, object]]) -> None:
+def _run_alignment_job(
+    job: JobRecord,
+    selected_blocks: Sequence[Dict[str, object]],
+    align_options: Dict[str, object],
+) -> None:
     try:
         upload = _require_upload(job.upload_id)
+        parsed_align_options = _parse_align_options(align_options)
+        include_intervals = bool(parsed_align_options.get("include_inter_block_intervals", False))
         _set_job_state(job, status="running", stage="preflight", progress=0.05, message="Checking MAFFT")
         mafft = _require_command("mafft")
 
         _check_cancel(job)
         _set_job_state(job, stage="selection", progress=0.20, message="Preparing selected segments")
-        query_selected, reference_selected, inversion_local_ranges, selected_summary = _build_selected_sequences(upload, selected_blocks)
+        (
+            query_selected,
+            reference_selected,
+            inversion_local_ranges,
+            duplication_local_ranges,
+            selected_summary,
+            inter_block_intervals_count,
+            stitching_notes,
+        ) = _build_selected_sequences(
+            upload,
+            selected_blocks,
+            include_inter_block_intervals=include_intervals,
+        )
 
         work_dir = upload.dir_path / f"align_{job.job_id}"
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -796,9 +977,22 @@ def _run_alignment_job(job: JobRecord, selected_blocks: Sequence[Dict[str, objec
         _set_job_state(job, stage="mapping", progress=0.85, message="Mapping inversion intervals")
         inversion_cols = _map_local_ranges_to_columns(aligned_query, inversion_local_ranges)
         inversion_intervals = [
-            {"start_column": int(start_col), "end_column": int(end_col), "label": "INV"}
+            {"kind": "inversion", "start_column": int(start_col), "end_column": int(end_col), "label": "INV"}
             for start_col, end_col in inversion_cols
             if end_col >= start_col
+        ]
+        duplication_cols = _map_labeled_local_ranges_to_columns(aligned_query, duplication_local_ranges)
+        duplication_intervals = [
+            {
+                "kind": "duplication",
+                "start_column": int(item["start_column"]),
+                "end_column": int(item["end_column"]),
+                "label": str(item.get("label", "DUP")),
+                "block_id": str(item.get("block_id", "")),
+                "pointer_text": str(item.get("pointer_text", "")).strip(),
+            }
+            for item in duplication_cols
+            if int(item.get("end_column", 0)) >= int(item.get("start_column", 0))
         ]
 
         aligned_path = work_dir / "aligned_pair.fa"
@@ -807,17 +1001,26 @@ def _run_alignment_job(job: JobRecord, selected_blocks: Sequence[Dict[str, objec
             encoding="utf-8",
         )
 
+        done_message = "Alignment complete"
+        if include_intervals:
+            done_message += f" (inter-block intervals inserted: {inter_block_intervals_count})"
+
         _set_job_state(
             job,
             status="done",
             stage="done",
             progress=1.0,
-            message="Alignment complete",
+            message=done_message,
             result={
+                "align_options_used": parsed_align_options,
                 "aligned_path": str(aligned_path),
                 "alignment_length": len(aligned_query),
                 "selected_blocks": selected_summary,
                 "inversion_intervals": inversion_intervals,
+                "duplication_intervals": duplication_intervals,
+                "duplication_intervals_count": len(duplication_intervals),
+                "inter_block_intervals_count": int(inter_block_intervals_count),
+                "stitching_notes": stitching_notes,
             },
         )
     except subprocess.CalledProcessError as exc:
@@ -832,7 +1035,12 @@ def _run_alignment_job(job: JobRecord, selected_blocks: Sequence[Dict[str, objec
             _set_job_state(job, status="failed", stage="failed", error=message)
 
 
-def start_alignment_job(upload_id: str, selected_blocks: Sequence[Dict[str, object]]) -> str:
+def start_alignment_job(
+    upload_id: str,
+    selected_blocks: Sequence[Dict[str, object]],
+    *,
+    align_options: Optional[Dict[str, object]] = None,
+) -> str:
     upload = _require_upload(upload_id)
     if upload.dotplot is None:
         raise ValueError("Dotplot must be completed before starting alignment")
@@ -842,15 +1050,29 @@ def start_alignment_job(upload_id: str, selected_blocks: Sequence[Dict[str, obje
     if not any(bool(item.get("include", True)) for item in selected_blocks):
         raise ValueError("At least one selected block must be included")
 
+    parsed_align_options = _parse_align_options(align_options)
     job = _new_job("align", upload_id)
-    worker = threading.Thread(target=_run_alignment_job, args=(job, list(selected_blocks)), daemon=True)
+    job.result = {"align_options_used": parsed_align_options}
+    worker = threading.Thread(
+        target=_run_alignment_job,
+        args=(job, list(selected_blocks), parsed_align_options),
+        daemon=True,
+    )
     worker.start()
     return job.job_id
 
 
-def _set_inversion_regions(session: RenderSession, inversion_intervals: Sequence[Dict[str, object]]) -> None:
+def _set_feature_regions(
+    session: RenderSession,
+    inversion_intervals: Sequence[Dict[str, object]],
+    duplication_intervals: Sequence[Dict[str, object]],
+) -> None:
     regions: List[Dict[str, object]] = []
-    for interval in inversion_intervals:
+    all_intervals = [
+        *[("inversion", interval) for interval in inversion_intervals],
+        *[("duplication", interval) for interval in duplication_intervals],
+    ]
+    for kind, interval in all_intervals:
         start_col = int(interval.get("start_column", 0))
         end_col = int(interval.get("end_column", 0))
         if start_col <= 0 or end_col <= 0:
@@ -862,16 +1084,23 @@ def _set_inversion_regions(session: RenderSession, inversion_intervals: Sequence
         end_col = min(end_col, len(session.global_x))
         start_idx = start_col - 1
         end_idx = end_col - 1
+        tag = str(interval.get("label", "INV" if kind == "inversion" else "DUP"))
+        region = {
+            "kind": kind,
+            "start_column": start_col,
+            "end_column": end_col,
+            "start_x": float(session.global_x[start_idx]),
+            "end_x": float(session.global_x[end_idx]),
+            "tag": tag,
+        }
+        pointer_text = str(interval.get("pointer_text", "")).strip()
+        if pointer_text:
+            region["pointer_text"] = pointer_text
         regions.append(
-            {
-                "start_column": start_col,
-                "end_column": end_col,
-                "start_x": float(session.global_x[start_idx]),
-                "end_x": float(session.global_x[end_idx]),
-                "tag": str(interval.get("label", "INV")),
-            }
+            region
         )
-    session.inversion_regions = regions
+    session.feature_regions = regions
+    session.inversion_regions = [dict(region) for region in regions if str(region.get("kind")) == "inversion"]
 
 
 def render_alignment_job_for_viewer(
@@ -911,7 +1140,8 @@ def render_alignment_job_for_viewer(
     )
 
     inversion_intervals = list(job.result.get("inversion_intervals", []))
-    _set_inversion_regions(session, inversion_intervals)
+    duplication_intervals = list(job.result.get("duplication_intervals", []))
+    _set_feature_regions(session, inversion_intervals, duplication_intervals)
 
     result = render_alignment(session, viewport=None)
     return {

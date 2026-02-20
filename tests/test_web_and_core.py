@@ -57,6 +57,42 @@ class CoreTests(unittest.TestCase):
         self.assertIn("query_base", probe)
         self.assertIn("reference_base", probe)
 
+    def test_render_feature_tags_support_duplication_and_inversion(self):
+        params = RenderParams()
+        session = prepare_session(
+            input_path=ALIGN,
+            params=params,
+            reference_annotation_path=REF_ANNOT,
+        )
+        session.feature_regions = [
+            {
+                "kind": "inversion",
+                "start_column": 10,
+                "end_column": 20,
+                "start_x": float(session.global_x[9]),
+                "end_x": float(session.global_x[19]),
+                "tag": "INV",
+            },
+            {
+                "kind": "duplication",
+                "start_column": 30,
+                "end_column": 40,
+                "start_x": float(session.global_x[29]),
+                "end_x": float(session.global_x[39]),
+                "tag": "DUP",
+                "pointer_text": "Duplicated on query 30-40; reference 50-60",
+            },
+        ]
+        session.inversion_regions = [dict(session.feature_regions[0])]
+        result = render_alignment(session, viewport=None)
+        self.assertGreaterEqual(len(result.inversion_regions), 1)
+        kinds = {item.get("kind") for item in result.feature_tags}
+        self.assertIn("inversion", kinds)
+        self.assertIn("duplication", kinds)
+        dup_tags = [item for item in result.feature_tags if item.get("kind") == "duplication"]
+        self.assertTrue(dup_tags)
+        self.assertIn("pointer_text", dup_tags[0])
+
     def test_render_in_worker_thread(self):
         params = RenderParams()
         session = prepare_session(
@@ -415,6 +451,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(resp.get_json()["job_id"], "job-opts")
         mocked.assert_called_once()
 
+    def test_api_genome_align_start_accepts_align_options(self):
+        with patch("webapp.app.start_alignment_job", return_value="align-job") as mocked:
+            resp = self.client.post(
+                "/api/genome/align/start",
+                json={
+                    "upload_id": "u-align",
+                    "selected_blocks": [{"block_id": "b0", "include": True}],
+                    "align_options": {"include_inter_block_intervals": True},
+                },
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["job_id"], "align-job")
+        mocked.assert_called_once()
+
     def test_api_genome_jobs_status_includes_result_metadata(self):
         fake_status = {
             "job_id": "job-meta",
@@ -433,6 +483,10 @@ class ApiTests(unittest.TestCase):
                 "blocks_count": 4,
                 "parsed_rows_count": 4,
                 "skipped_rows_count": 0,
+                "align_options_used": {"include_inter_block_intervals": True},
+                "inter_block_intervals_count": 2,
+                "stitching_notes": ["Inter-block bridge between b0 and b1 produced only one stream interval."],
+                "duplication_intervals_count": 1,
             },
             "created_at": 0.0,
             "updated_at": 0.0,
@@ -445,6 +499,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("result", body)
         self.assertIn("nucmer_command", body["result"])
         self.assertIn("parsed_rows_count", body["result"])
+        self.assertIn("align_options_used", body["result"])
+        self.assertIn("duplication_intervals_count", body["result"])
 
 
 if __name__ == "__main__":
